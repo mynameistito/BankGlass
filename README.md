@@ -108,16 +108,16 @@ $headers = @{
   "CF-Access-Client-Id" = $env:CF_ACCESS_CLIENT_ID
   "CF-Access-Client-Secret" = $env:CF_ACCESS_CLIENT_SECRET
 }
-Invoke-RestMethod -Headers $headers https://bank.example.com/v1/accounts
-Invoke-RestMethod -Headers $headers "https://bank.example.com/v1/transactions?from=2026-08-01T00:00:00Z&limit=50"
-Invoke-RestMethod -Method Post -Headers $headers https://bank.example.com/v1/refresh
+Invoke-RestMethod -Headers $headers https://domain.tld/v1/accounts
+Invoke-RestMethod -Headers $headers "https://domain.tld/v1/transactions?from=2026-08-01T00:00:00Z&limit=50"
+Invoke-RestMethod -Method Post -Headers $headers https://domain.tld/v1/refresh
 ```
 
 An unattended REST client supplies all three headers: the REST bearer plus `CF-Access-Client-Id` and `CF-Access-Client-Secret`.
 
 ## MCP
 
-The stateless Streamable HTTP endpoint is `https://bank.example.com/mcp`. It deliberately does not use the REST bearer because Managed OAuth owns `Authorization`; Access authentication remains mandatory. It exposes four read-only tools:
+The stateless Streamable HTTP endpoint is `https://domain.tld/mcp`. It deliberately does not use the REST bearer because Managed OAuth owns `Authorization`; Cloudflare Access authentication remains mandatory. It exposes four read-only tools:
 
 | Tool | Description |
 | --- | --- |
@@ -126,27 +126,38 @@ The stateless Streamable HTTP endpoint is `https://bank.example.com/mcp`. It del
 | `list_transactions` | Posted or pending transactions with filters and cursor pagination |
 | `get_sync_status` | Sync state and provider freshness |
 
+Tool inputs:
+
+| Tool | Inputs |
+| --- | --- |
+| `list_accounts` | None |
+| `get_balance` | Required `accountId` |
+| `list_transactions` | Optional `accountId`, `cursor`, `from`, `to`; `status` is `posted` or `pending` and defaults to `posted`; `limit` is 1-200 and defaults to 50 |
+| `get_sync_status` | None |
+
 There is no MCP refresh or payment tool. An agent cannot cause upstream provider activity or mutate banking data.
 
-Interactive MCP clients that support remote OAuth can use:
+### Connect An MCP Client
+
+Interactive MCP clients that support remote OAuth can use this server definition. The client will open the Cloudflare Access login flow:
 
 ```json
 {
   "mcpServers": {
     "bankglass": {
-      "url": "https://bank.example.com/mcp"
+      "url": "https://domain.tld/mcp"
     }
   }
 }
 ```
 
-For an unattended client that supports custom transport headers:
+For an unattended client that supports custom transport headers, configure a Cloudflare Access service token. The MCP endpoint does not use `API_BEARER_TOKEN`:
 
 ```json
 {
   "mcpServers": {
     "bankglass": {
-      "url": "https://bank.example.com/mcp",
+      "url": "https://domain.tld/mcp",
       "headers": {
         "CF-Access-Client-Id": "${CF_ACCESS_CLIENT_ID}",
         "CF-Access-Client-Secret": "${CF_ACCESS_CLIENT_SECRET}"
@@ -155,6 +166,8 @@ For an unattended client that supports custom transport headers:
   }
 }
 ```
+
+Set `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET` in the MCP client's private environment or secret manager. Do not add the REST `Authorization` header to this configuration: MCP Managed OAuth owns that header, and the REST bearer is only accepted by `/v1/*` routes.
 
 Errors are stable envelopes such as:
 
@@ -197,7 +210,7 @@ Create `.dev.vars` locally with:
 AKAHU_APP_TOKEN=replace-me
 AKAHU_USER_TOKEN=replace-me
 API_BEARER_TOKEN=replace-with-at-least-32-random-bytes
-ACCESS_APP_HOSTNAME=bank.example.com
+ACCESS_APP_HOSTNAME=domain.tld
 ACCESS_POLICY_AUD=replace-with-access-application-aud
 ACCESS_TEAM_DOMAIN=https://your-team.cloudflareaccess.com
 ```
@@ -210,7 +223,7 @@ ACCESS_TEAM_DOMAIN=https://your-team.cloudflareaccess.com
 2. Create D1: `bunx wrangler d1 create bankglass`.
 3. Replace `REPLACE_WITH_D1_DATABASE_ID` in `wrangler.jsonc` with the returned ID.
 4. Choose the intended custom hostname and create a Cloudflare Access self-hosted application covering it. Add the owner-email `Allow` policy and agent `Service Auth` policy, and enable Managed OAuth.
-5. Replace the three `ACCESS_*` placeholders in `wrangler.jsonc` with the custom hostname, application AUD tag, and team domain.
+5. Set `ACCESS_APP_HOSTNAME` and `ACCESS_TEAM_DOMAIN` in `wrangler.jsonc` for the custom hostname and team domain. Keep the Access application AUD tag out of `wrangler.jsonc`.
 6. Apply migrations: `bunx wrangler d1 migrations apply bankglass --remote`.
 7. Add secrets interactively:
 
@@ -218,6 +231,7 @@ ACCESS_TEAM_DOMAIN=https://your-team.cloudflareaccess.com
 bunx wrangler secret put AKAHU_APP_TOKEN
 bunx wrangler secret put AKAHU_USER_TOKEN
 bunx wrangler secret put API_BEARER_TOKEN
+bunx wrangler secret put ACCESS_POLICY_AUD
 ```
 
 8. Run verification: `bun run typecheck`, `bun run test`, and `bun run lint`.

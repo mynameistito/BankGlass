@@ -17,7 +17,6 @@
   "triggers": { "crons": ["17 3 * * *"] },
   "vars": {
     "ACCESS_APP_HOSTNAME": "bank.honetito.com",
-    "ACCESS_POLICY_AUD": "f8426e039a29865226bdfa07979275f13debae6985970353f873aed83b85f821",
     "ACCESS_TEAM_DOMAIN": "https://mynameistito.cloudflareaccess.com",
     "AKAHU_API_BASE_URL": "https://api.akahu.io/v1",
     "REFRESH_COOLDOWN_SECONDS": "3600",

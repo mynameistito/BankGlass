@@ -29,7 +29,7 @@
   "variable": [
     {
       "key": "base_url",
-      "value": "https://bank.honetito.com"
+      "value": "https://domain.tld"
     },
     {
       "key": "api_bearer_token",
