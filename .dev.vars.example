@@ -1,6 +1,6 @@
 AKAHU_APP_TOKEN=
 AKAHU_USER_TOKEN=
-API_BEARER_TOKEN=
+API_BEARER_TOKEN= # [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).ToLowerInvariant()
 ACCESS_APP_HOSTNAME=bank.example.com
 ACCESS_POLICY_AUD=
 ACCESS_TEAM_DOMAIN=https://your-team.cloudflareaccess.com

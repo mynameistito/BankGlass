@@ -1,6 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "bankglass",
+  "account_id": "402722ab1f598e783cd6dcdedc37e1d0",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-26",
   "compatibility_flags": ["nodejs_compat"],
@@ -8,15 +9,16 @@
     {
       "binding": "DB",
       "database_name": "bankglass",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "database_id": "cf6023d4-40f0-4bc3-9dbe-2f78852ded0f",
       "migrations_dir": "migrations",
     },
   ],
+  "routes": [{ "pattern": "bank.honetito.com", "custom_domain": true }],
   "triggers": { "crons": ["17 3 * * *"] },
   "vars": {
-    "ACCESS_APP_HOSTNAME": "replace-with-custom-hostname",
-    "ACCESS_POLICY_AUD": "REPLACE_WITH_ACCESS_AUD",
-    "ACCESS_TEAM_DOMAIN": "https://replace-with-team-name.cloudflareaccess.com",
+    "ACCESS_APP_HOSTNAME": "bank.honetito.com",
+    "ACCESS_POLICY_AUD": "f8426e039a29865226bdfa07979275f13debae6985970353f873aed83b85f821",
+    "ACCESS_TEAM_DOMAIN": "https://mynameistito.cloudflareaccess.com",
     "AKAHU_API_BASE_URL": "https://api.akahu.io/v1",
     "REFRESH_COOLDOWN_SECONDS": "3600",
     "SYNC_LOOKBACK_DAYS": "14",
