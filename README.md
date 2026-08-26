@@ -35,7 +35,7 @@ No legitimate free individual option provides guaranteed near-real-time BNZ data
 ## Architecture
 
 ```text
-BNZ official Open Banking / CDR
+NZ official Open Banking / CDR
               |
               v
    Akahu Personal App cache
@@ -212,10 +212,10 @@ ACCESS_TEAM_DOMAIN=https://your-team.cloudflareaccess.com
 
 `.dev.vars` is ignored by Git. Do not use real credentials in tests; tests use deterministic providers and Miniflare bindings.
 
-Generate a bearer token with PowerShell instead of storing a literal token in shell history:
+Generate a bearer token with OpenSSL instead of storing a literal token in shell history:
 
-```powershell
-[Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).ToLowerInvariant()
+```sh
+openssl rand -hex 32
 ```
 
 ## Cloudflare deployment
