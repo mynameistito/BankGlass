@@ -1,0 +1,34 @@
+{
+  "name": "bankglass",
+  "private": true,
+  "type": "module",
+  "module": "src/index.ts",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "format": "ultracite fix",
+    "lint": "ultracite check",
+    "test": "vitest run",
+    "typecheck": "wrangler types && tsc --noEmit",
+    "check": "ultracite check",
+    "fix": "ultracite fix"
+  },
+  "dependencies": {
+    "@effect/platform": "^0.97.1",
+    "@modelcontextprotocol/server": "2.0.0",
+    "agents": "^0.21.0",
+    "effect": "^3.22.1",
+    "jose": "^6.2.10",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@cloudflare/workers-types": "^5.20260826.1",
+    "oxfmt": "latest",
+    "oxlint": "latest",
+    "typescript": "^7.0.2",
+    "ultracite": "7.10.6",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.126.0"
+  }
+}

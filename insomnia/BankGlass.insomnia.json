@@ -1,0 +1,223 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2026-08-27T00:00:00.000Z",
+  "__export_source": "bankglass",
+  "resources": [
+    {
+      "_id": "wrk_bankglass",
+      "parentId": null,
+      "name": "BankGlass REST API",
+      "description": "Read-only BankGlass REST API requests. Cloudflare Access service-token headers and the REST bearer token are configured per request.",
+      "scope": "collection",
+      "_type": "workspace"
+    },
+    {
+      "_id": "env_bankglass",
+      "parentId": "wrk_bankglass",
+      "name": "Base Environment",
+      "data": {
+        "base_url": "https://domain.tld",
+        "cf_access_client_id": "",
+        "cf_access_client_secret": "",
+        "api_bearer_token": "",
+        "account_id": "replace-with-account-id"
+      },
+      "_type": "environment"
+    },
+    {
+      "_id": "fld_accounts",
+      "parentId": "wrk_bankglass",
+      "name": "Accounts",
+      "_type": "request_group"
+    },
+    {
+      "_id": "fld_transactions",
+      "parentId": "wrk_bankglass",
+      "name": "Transactions",
+      "_type": "request_group"
+    },
+    {
+      "_id": "fld_sync",
+      "parentId": "wrk_bankglass",
+      "name": "Sync",
+      "_type": "request_group"
+    },
+    {
+      "_id": "req_accounts",
+      "parentId": "fld_accounts",
+      "name": "List accounts",
+      "method": "GET",
+      "url": "{{ _.base_url }}/v1/accounts",
+      "headers": [
+        {
+          "name": "CF-Access-Client-Id",
+          "value": "{{ _.cf_access_client_id }}"
+        },
+        {
+          "name": "CF-Access-Client-Secret",
+          "value": "{{ _.cf_access_client_secret }}"
+        }
+      ],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.api_bearer_token }}"
+      },
+      "_type": "request"
+    },
+    {
+      "_id": "req_account",
+      "parentId": "fld_accounts",
+      "name": "Get account",
+      "method": "GET",
+      "url": "{{ _.base_url }}/v1/accounts/{{ _.account_id }}",
+      "headers": [
+        {
+          "name": "CF-Access-Client-Id",
+          "value": "{{ _.cf_access_client_id }}"
+        },
+        {
+          "name": "CF-Access-Client-Secret",
+          "value": "{{ _.cf_access_client_secret }}"
+        }
+      ],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.api_bearer_token }}"
+      },
+      "_type": "request"
+    },
+    {
+      "_id": "req_balance",
+      "parentId": "fld_accounts",
+      "name": "Get account balance",
+      "method": "GET",
+      "url": "{{ _.base_url }}/v1/accounts/{{ _.account_id }}/balance",
+      "headers": [
+        {
+          "name": "CF-Access-Client-Id",
+          "value": "{{ _.cf_access_client_id }}"
+        },
+        {
+          "name": "CF-Access-Client-Secret",
+          "value": "{{ _.cf_access_client_secret }}"
+        }
+      ],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.api_bearer_token }}"
+      },
+      "_type": "request"
+    },
+    {
+      "_id": "req_all_transactions",
+      "parentId": "fld_transactions",
+      "name": "List all posted transactions",
+      "method": "GET",
+      "url": "{{ _.base_url }}/v1/transactions?limit=50",
+      "headers": [
+        {
+          "name": "CF-Access-Client-Id",
+          "value": "{{ _.cf_access_client_id }}"
+        },
+        {
+          "name": "CF-Access-Client-Secret",
+          "value": "{{ _.cf_access_client_secret }}"
+        }
+      ],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.api_bearer_token }}"
+      },
+      "_type": "request"
+    },
+    {
+      "_id": "req_transactions",
+      "parentId": "fld_transactions",
+      "name": "List account transactions",
+      "method": "GET",
+      "url": "{{ _.base_url }}/v1/accounts/{{ _.account_id }}/transactions?limit=50",
+      "headers": [
+        {
+          "name": "CF-Access-Client-Id",
+          "value": "{{ _.cf_access_client_id }}"
+        },
+        {
+          "name": "CF-Access-Client-Secret",
+          "value": "{{ _.cf_access_client_secret }}"
+        }
+      ],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.api_bearer_token }}"
+      },
+      "_type": "request"
+    },
+    {
+      "_id": "req_pending",
+      "parentId": "fld_transactions",
+      "name": "List account pending transactions",
+      "method": "GET",
+      "url": "{{ _.base_url }}/v1/accounts/{{ _.account_id }}/pending?limit=50",
+      "headers": [
+        {
+          "name": "CF-Access-Client-Id",
+          "value": "{{ _.cf_access_client_id }}"
+        },
+        {
+          "name": "CF-Access-Client-Secret",
+          "value": "{{ _.cf_access_client_secret }}"
+        }
+      ],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.api_bearer_token }}"
+      },
+      "_type": "request"
+    },
+    {
+      "_id": "req_status",
+      "parentId": "fld_sync",
+      "name": "Get sync status",
+      "method": "GET",
+      "url": "{{ _.base_url }}/v1/status",
+      "headers": [
+        {
+          "name": "CF-Access-Client-Id",
+          "value": "{{ _.cf_access_client_id }}"
+        },
+        {
+          "name": "CF-Access-Client-Secret",
+          "value": "{{ _.cf_access_client_secret }}"
+        }
+      ],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.api_bearer_token }}"
+      },
+      "_type": "request"
+    },
+    {
+      "_id": "req_refresh",
+      "parentId": "fld_sync",
+      "name": "Request refresh",
+      "method": "POST",
+      "url": "{{ _.base_url }}/v1/refresh",
+      "headers": [
+        {
+          "name": "CF-Access-Client-Id",
+          "value": "{{ _.cf_access_client_id }}"
+        },
+        {
+          "name": "CF-Access-Client-Secret",
+          "value": "{{ _.cf_access_client_secret }}"
+        }
+      ],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.api_bearer_token }}"
+      },
+      "_type": "request"
+    }
+  ]
+}
