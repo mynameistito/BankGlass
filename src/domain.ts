@@ -69,6 +69,28 @@ export const PendingTransactionSchema = Schema.Struct({
 });
 export type PendingTransaction = typeof PendingTransactionSchema.Type;
 
+export interface TransactionRecord {
+  readonly accountId: string;
+  readonly amount: number;
+  readonly balance: number | null;
+  readonly cardSuffix: string | null;
+  readonly categoryName: string | null;
+  readonly code: string | null;
+  readonly currency: string;
+  readonly dataUpdatedAt: string;
+  readonly description: string;
+  readonly id: string;
+  readonly merchantName: string | null;
+  readonly otherAccount: string | null;
+  readonly particulars: string | null;
+  readonly providerUpdatedAt: string;
+  readonly reference: string | null;
+  readonly status: "posted" | "pending";
+  readonly syncedAt: string;
+  readonly transactionAt: string;
+  readonly type: string;
+}
+
 export interface TransactionQuery {
   readonly accountId: string | null;
   readonly status: "posted" | "pending" | null;
@@ -78,11 +100,11 @@ export interface TransactionQuery {
   readonly cursor: string | null;
 }
 export interface TransactionPage {
-  readonly items: readonly Record<string, unknown>[];
+  readonly items: readonly TransactionRecord[];
   readonly nextCursor: string | null;
 }
 export interface SyncStatus {
-  readonly status: "idle" | "refreshing" | "syncing" | "failed";
+  readonly status: string & { readonly __syncStatus?: never };
   readonly startedAt: string | null;
   readonly lastAttemptAt: string | null;
   readonly lastSuccessAt: string | null;

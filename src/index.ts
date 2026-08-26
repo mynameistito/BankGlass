@@ -1,23 +1,18 @@
 import { Effect, Layer } from "effect";
 
 import { authenticateAccess } from "./access-auth";
-import { AkahuBankProviderLive } from "./akahu-provider";
+import { akahuBankProviderLive } from "./akahu-provider";
 import { BankStore } from "./bank-store";
 import { parseConfig } from "./config";
-import type { WorkerSecrets } from "./config";
-import { D1BankStoreLive } from "./d1-bank-store";
+import { d1BankStoreLive } from "./d1-bank-store";
 import { routeRequest } from "./http-api";
 import { routeMcpRequest } from "./mcp-api";
-import { SyncService, makeSyncService } from "./sync-service";
+import { SyncService, syncServiceLive } from "./sync-service";
 
-const programLayer = (
-  env: Env & WorkerSecrets,
-  cooldown: number,
-  lookback: number
-) => {
+const programLayer = (env: Env, cooldown: number, lookback: number) => {
   const dependencies = Layer.merge(
-    D1BankStoreLive(env.DB),
-    AkahuBankProviderLive({
+    d1BankStoreLive(env.DB),
+    akahuBankProviderLive({
       appToken: env.AKAHU_APP_TOKEN,
       baseUrl: env.AKAHU_API_BASE_URL,
       userToken: env.AKAHU_USER_TOKEN,
@@ -25,9 +20,7 @@ const programLayer = (
   );
   return Layer.merge(
     dependencies,
-    Layer.effect(SyncService, makeSyncService(cooldown, lookback)).pipe(
-      Layer.provide(dependencies)
-    )
+    syncServiceLive(cooldown, lookback).pipe(Layer.provide(dependencies))
   );
 };
 
@@ -77,7 +70,17 @@ const rateLimitedResponse = (retryAfterSeconds: number) =>
     }
   );
 
-const run = (request: Request, env: Env & WorkerSecrets) =>
+const runMcpRequest = (
+  request: Request,
+  store: ReturnType<typeof BankStore.of>,
+  hostname: string
+) =>
+  Effect.tryPromise({
+    catch: () => new TypeError("MCP request failed"),
+    try: () => routeMcpRequest(request, store, hostname),
+  });
+
+const run = (request: Request, env: Env) =>
   Effect.gen(function* runRequest() {
     const config = yield* parseConfig(env);
     return yield* Effect.gen(function* authenticatedRequest() {
@@ -98,13 +101,12 @@ const run = (request: Request, env: Env & WorkerSecrets) =>
               ? rateLimitedResponse(rateLimit.left.retryAfterSeconds)
               : internalErrorResponse();
           }
-          return yield* Effect.tryPromise({
-            catch: () => new TypeError("MCP request failed"),
-            try: () =>
-              routeMcpRequest(request, store, config.accessAppHostname),
-          }).pipe(
-            Effect.catchAll(() => Effect.succeed(internalErrorResponse()))
+          const response = yield* Effect.either(
+            runMcpRequest(request, store, config.accessAppHostname)
           );
+          return response._tag === "Right"
+            ? response.right
+            : internalErrorResponse();
         });
       }
       return yield* routeRequest(request, config);
@@ -137,32 +139,33 @@ const run = (request: Request, env: Env & WorkerSecrets) =>
   );
 
 export default {
-  fetch: (request: Request, env: Env) =>
-    Effect.runPromise(run(request, env as Env & WorkerSecrets)),
+  fetch: (request: Request, env: Env) => Effect.runPromise(run(request, env)),
   scheduled: (
     _controller: ScheduledController,
     env: Env,
     context: ExecutionContext
   ) => {
-    const secrets = env as Env & WorkerSecrets;
     const sync = Effect.gen(function* sync() {
-      yield* parseConfig(secrets);
+      yield* parseConfig(env);
       const service = yield* SyncService;
       yield* service.synchronize({ requestProviderRefresh: true });
     }).pipe(
       Effect.provide(
         programLayer(
-          secrets,
-          Number(secrets.REFRESH_COOLDOWN_SECONDS),
-          Number(secrets.SYNC_LOOKBACK_DAYS)
+          env,
+          Number(env.REFRESH_COOLDOWN_SECONDS),
+          Number(env.SYNC_LOOKBACK_DAYS)
         )
-      ),
-      Effect.catchAll((error) =>
-        Effect.logError("Scheduled synchronization failed", {
-          errorTag: error._tag,
-        })
       )
     );
-    context.waitUntil(Effect.runPromise(sync));
+    const completion = Effect.gen(function* scheduledCompletion() {
+      const result = yield* Effect.either(sync);
+      if (result._tag === "Left") {
+        yield* Effect.logError("Scheduled synchronization failed", {
+          errorTag: result.left._tag,
+        });
+      }
+    });
+    context.waitUntil(Effect.runPromise(completion));
   },
 } satisfies ExportedHandler<Env>;

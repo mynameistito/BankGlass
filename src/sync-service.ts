@@ -18,14 +18,22 @@ export interface SyncResult {
   readonly postedTransactions: number;
   readonly pendingTransactions: number;
 }
-export interface SyncServiceShape {
+const accountFreshness = (account: {
+  readonly providerBalanceRefreshedAt: string | null;
+  readonly providerTransactionsRefreshedAt: string | null;
+}) => [
+  account.providerBalanceRefreshedAt,
+  account.providerTransactionsRefreshedAt,
+];
+const isPresent = (value: string | null): value is string => value !== null;
+export interface SyncServiceService {
   readonly synchronize: (options: {
     readonly requestProviderRefresh: boolean;
   }) => Effect.Effect<SyncResult, SyncError>;
 }
 export class SyncService extends Context.Tag("@bankglass/SyncService")<
   SyncService,
-  SyncServiceShape
+  SyncServiceService
 >() {}
 
 export const makeSyncService = (
@@ -80,11 +88,8 @@ export const makeSyncService = (
             syncedAt,
           });
           const freshness = accounts
-            .flatMap((account) => [
-              account.providerBalanceRefreshedAt,
-              account.providerTransactionsRefreshedAt,
-            ])
-            .filter((value): value is string => value !== null)
+            .flatMap(accountFreshness)
+            .filter(isPresent)
             .toSorted();
           const providerRefreshedAt = freshness.at(0) ?? null;
           yield* store.completeSync(syncedAt, providerRefreshedAt);
@@ -108,7 +113,7 @@ export const makeSyncService = (
     return SyncService.of({ synchronize });
   });
 
-export const SyncServiceLive = (
+export const syncServiceLive = (
   cooldownSeconds: number,
   lookbackDays: number
 ) => Layer.effect(SyncService, makeSyncService(cooldownSeconds, lookbackDays));

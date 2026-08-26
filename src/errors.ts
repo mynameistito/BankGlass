@@ -1,39 +1,12 @@
-import { Data } from "effect";
-
-export class AuthenticationError extends Data.TaggedError(
-  "AuthenticationError"
-)<{ readonly message: string }> {}
-export class ProviderRateLimitError extends Data.TaggedError(
-  "ProviderRateLimitError"
-)<{ readonly retryAfterSeconds: number | null }> {}
-export class ProviderUnavailableError extends Data.TaggedError(
-  "ProviderUnavailableError"
-)<{ readonly operation: string; readonly cause: unknown }> {}
-export class RefreshCooldownError extends Data.TaggedError(
-  "RefreshCooldownError"
-)<{ readonly retryAt: string }> {}
-export class InvalidProviderResponseError extends Data.TaggedError(
-  "InvalidProviderResponseError"
-)<{ readonly operation: string; readonly details: string }> {}
-export class DatabaseError extends Data.TaggedError("DatabaseError")<{
-  readonly operation: string;
-  readonly cause: unknown;
-}> {}
-export class UnauthorizedApiRequestError extends Data.TaggedError(
-  "UnauthorizedApiRequestError"
-)<Record<string, never>> {}
-export class UnauthorizedAccessRequestError extends Data.TaggedError(
-  "UnauthorizedAccessRequestError"
-)<Record<string, never>> {}
-export class InvalidRequestError extends Data.TaggedError(
-  "InvalidRequestError"
-)<{ readonly message: string }> {}
-export class NotFoundError extends Data.TaggedError("NotFoundError")<{
-  readonly resource: string;
-}> {}
-export class ApiRateLimitError extends Data.TaggedError("ApiRateLimitError")<{
-  readonly retryAfterSeconds: number;
-}> {}
-export class SyncInProgressError extends Data.TaggedError(
-  "SyncInProgressError"
-)<Record<string, never>> {}
+export { ApiRateLimitError } from "./errors/api-rate-limit";
+export { AuthenticationError } from "./errors/authentication";
+export { DatabaseError } from "./errors/database";
+export { InvalidProviderResponseError } from "./errors/invalid-provider-response";
+export { InvalidRequestError } from "./errors/invalid-request";
+export { NotFoundError } from "./errors/not-found";
+export { ProviderRateLimitError } from "./errors/provider-rate-limit";
+export { ProviderUnavailableError } from "./errors/provider-unavailable";
+export { RefreshCooldownError } from "./errors/refresh-cooldown";
+export { SyncInProgressError } from "./errors/sync-in-progress";
+export { UnauthorizedAccessRequestError } from "./errors/unauthorized-access";
+export { UnauthorizedApiRequestError } from "./errors/unauthorized-api";

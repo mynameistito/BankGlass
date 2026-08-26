@@ -1,17 +1,10 @@
 import { defineConfig } from "oxlint";
+import antiSlop from "ultracite/oxlint/anti-slop";
 import core from "ultracite/oxlint/core";
+import { selectJsPlugins } from "ultracite/oxlint/js-plugins";
 import vitest from "ultracite/oxlint/vitest";
 
 export default defineConfig({
-  extends: [core, vitest],
+  extends: [core, vitest, antiSlop, selectJsPlugins(["github", "sonarjs"])],
   ignorePatterns: core.ignorePatterns,
-  overrides: [
-    {
-      files: ["src/errors.ts"],
-      // These tagged classes form one closed, colocated API error vocabulary.
-      rules: { "eslint/max-classes-per-file": "off" },
-    },
-  ],
-  // Effect's typed program composition uses callbacks; async/await would erase error and context channels.
-  rules: { "promise/prefer-await-to-callbacks": "off" },
 });

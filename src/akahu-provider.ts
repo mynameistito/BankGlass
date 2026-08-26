@@ -89,6 +89,8 @@ const PendingResponse = Schema.Struct({
   success: Schema.Literal(true),
 });
 const RefreshResponse = Schema.Struct({ success: Schema.Literal(true) });
+const ProviderPayloadSchema = Schema.Struct({});
+type ProviderPayload = typeof ProviderPayloadSchema.Type;
 
 export interface AkahuConfig {
   readonly baseUrl: string;
@@ -99,16 +101,22 @@ export interface AkahuConfig {
 const decode = <A, I>(
   schema: Schema.Schema<A, I>,
   operation: string,
-  input: unknown
+  input: ProviderPayload
 ) =>
-  Schema.decodeUnknown(schema)(input).pipe(
-    Effect.mapError(
-      (error) =>
-        new InvalidProviderResponseError({ details: String(error), operation })
-    )
-  );
+  Effect.gen(function* decodePayload() {
+    const result = yield* Effect.either(Schema.decodeUnknown(schema)(input));
+    if (result._tag === "Left") {
+      return yield* Effect.fail(
+        new InvalidProviderResponseError({
+          details: String(result.left),
+          operation,
+        })
+      );
+    }
+    return result.right;
+  });
 
-export const decodeAkahuAccounts = (input: unknown, now: string) =>
+export const decodeAkahuAccounts = (input: ProviderPayload, now: string) =>
   decode(AccountsResponse, "getAccounts", input).pipe(
     Effect.map((response) =>
       response.items.map((item): BankAccount => ({
@@ -158,7 +166,7 @@ const pendingId = (item: typeof AkahuPending.Type) =>
 const parseResponse = (
   operation: string,
   response: Response
-): Effect.Effect<unknown, BankProviderError> => {
+): Effect.Effect<ProviderPayload, BankProviderError> => {
   if (response.status === 401 || response.status === 403) {
     return Effect.fail(
       new AuthenticationError({
@@ -182,10 +190,11 @@ const parseResponse = (
       })
     );
   }
-  return Effect.tryPromise({
+  return Effect.tryPromise<ProviderPayload, BankProviderError>({
     catch: (cause) =>
       new InvalidProviderResponseError({ details: String(cause), operation }),
-    try: () => response.json(),
+    try: async () =>
+      Schema.decodeUnknownSync(ProviderPayloadSchema)(await response.json()),
   });
 };
 
@@ -197,7 +206,7 @@ export const makeAkahuBankProvider = (
     operation: string,
     path: string,
     init?: RequestInit
-  ): Effect.Effect<unknown, BankProviderError> =>
+  ): Effect.Effect<ProviderPayload, BankProviderError> =>
     Effect.tryPromise({
       catch: (cause) => new ProviderUnavailableError({ cause, operation }),
       try: () =>
@@ -335,5 +344,5 @@ export const makeAkahuBankProvider = (
   });
 };
 
-export const AkahuBankProviderLive = (config: AkahuConfig) =>
+export const akahuBankProviderLive = (config: AkahuConfig) =>
   Layer.succeed(BankProvider, makeAkahuBankProvider(config));

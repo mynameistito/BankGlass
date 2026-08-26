@@ -12,7 +12,7 @@ const readOnlyAnnotations = {
   readOnlyHint: true,
 };
 
-const successfulToolResult = (data: unknown) => ({
+const successfulToolResult = <Data>(data: Data) => ({
   content: [{ text: JSON.stringify(data), type: "text" as const }],
 });
 
@@ -29,8 +29,8 @@ const failedToolResult = (errorTag: string) => ({
   isError: true,
 });
 
-const runTool = <Value, Error extends { readonly _tag: string }>(
-  effect: Effect.Effect<Value, Error>
+const runTool = <Value, Failure extends { readonly _tag: string }>(
+  effect: Effect.Effect<Value, Failure>
 ) =>
   Effect.runPromise(
     Effect.match(effect, {
@@ -133,10 +133,11 @@ export const routeMcpRequest = (
     responseMode: "auto",
     route: "/mcp",
   });
-  return handler.fetch(request).then((response) => {
+  return (async () => {
+    const response = await handler.fetch(request);
     const securedResponse = new Response(response.body, response);
     securedResponse.headers.set("Cache-Control", "no-store");
     securedResponse.headers.set("X-Content-Type-Options", "nosniff");
     return securedResponse;
-  });
+  })();
 };
