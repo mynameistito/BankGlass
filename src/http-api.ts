@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 
 import { authenticate } from "./auth";
 import { BankStore } from "./bank-store";
@@ -7,6 +7,9 @@ import type { RuntimeConfig } from "./config";
 import type { TransactionQuery } from "./domain";
 import { InvalidRequestError } from "./errors";
 import { SyncService } from "./sync-service";
+
+type JsonValue = Parameters<typeof Response.json>[0];
+const CursorSchema = Schema.Struct({ date: Schema.String, id: Schema.String });
 
 const securityHeaders = {
   "Cache-Control": "no-store",
@@ -17,8 +20,11 @@ const securityHeaders = {
   "X-Content-Type-Options": "nosniff",
   "X-Frame-Options": "DENY",
 };
-const json = (body: unknown, status = 200, extra: HeadersInit = {}) =>
+const json = (body: JsonValue, status = 200, extra: HeadersInit = {}) =>
   Response.json(body, { headers: { ...securityHeaders, ...extra }, status });
+const routeNotFound = {
+  error: { code: "NOT_FOUND", message: "Route not found" },
+};
 const parseDate = (value: string | null, name: string) => {
   if (value === null) {
     return null;
@@ -52,15 +58,7 @@ const parseQuery = (
   const cursor = url.searchParams.get("cursor");
   if (cursor !== null) {
     try {
-      const decoded: unknown = JSON.parse(atob(cursor));
-      if (
-        typeof decoded !== "object" ||
-        decoded === null ||
-        !("date" in decoded) ||
-        !("id" in decoded)
-      ) {
-        throw new TypeError("Cursor payload has the wrong shape");
-      }
+      Schema.decodeUnknownSync(CursorSchema)(JSON.parse(atob(cursor)));
     } catch {
       throw new InvalidRequestError({ message: "cursor is invalid" });
     }
@@ -127,14 +125,11 @@ const routeAccountRequest = (
       const page = yield* store.listTransactions(query);
       return json({ data: page.items, nextCursor: page.nextCursor });
     }
-    return json(
-      { error: { code: "NOT_FOUND", message: "Route not found" } },
-      404
-    );
+    return json(routeNotFound, 404);
   });
 
-export const routeRequest = (request: Request, config: RuntimeConfig) =>
-  Effect.gen(function* routeRequestProgram() {
+const routeRequestProgram = (request: Request, config: RuntimeConfig) =>
+  Effect.gen(function* routeRequestEffect() {
     yield* authenticate(request, config.apiBearerToken);
     const store = yield* BankStore;
     const nowSeconds = Math.floor(Date.now() / 1000);
@@ -146,10 +141,7 @@ export const routeRequest = (request: Request, config: RuntimeConfig) =>
     const url = new URL(request.url);
     const parts = url.pathname.split("/").filter(Boolean);
     if (parts[0] !== "v1") {
-      return json(
-        { error: { code: "NOT_FOUND", message: "Route not found" } },
-        404
-      );
+      return json(routeNotFound, 404);
     }
     if (request.method === "GET" && url.pathname === "/v1/accounts") {
       return json({ data: yield* store.listAccounts });
@@ -170,62 +162,78 @@ export const routeRequest = (request: Request, config: RuntimeConfig) =>
     if (parts[1] === "accounts" && parts[2] !== undefined) {
       return yield* routeAccountRequest(request, url, parts, store);
     }
-    return json(
-      { error: { code: "NOT_FOUND", message: "Route not found" } },
-      404
-    );
-  }).pipe(
-    Effect.catchAll((error) => {
-      const body = {
-        error: {
-          code: error._tag
-            .replace(/Error$/u, "")
-            .replaceAll(/(?<lower>[a-z])(?<upper>[A-Z])/gu, "$<lower>_$<upper>")
-            .toUpperCase(),
-          message: "Request could not be completed",
+    return json(routeNotFound, 404);
+  });
+
+interface RequestError {
+  readonly _tag: string;
+  readonly message?: string;
+  readonly retryAfterSeconds?: number | null;
+  readonly retryAt?: string;
+}
+
+const handleRequestError = (error: RequestError) => {
+  const body: JsonValue = {
+    error: {
+      code: error._tag
+        .replace(/Error$/u, "")
+        .replaceAll(/(?<lower>[a-z])(?<upper>[A-Z])/gu, "$<lower>_$<upper>")
+        .toUpperCase(),
+      message: "Request could not be completed",
+    },
+  };
+  switch (error._tag) {
+    case "UnauthorizedApiRequestError": {
+      return json(body, 401, { "WWW-Authenticate": "Bearer" });
+    }
+    case "InvalidRequestError": {
+      return json(
+        {
+          error: {
+            code: body.error.code,
+            message: error.message ?? "Request could not be completed",
+          },
         },
-      };
-      switch (error._tag) {
-        case "UnauthorizedApiRequestError": {
-          return Effect.succeed(
-            json(body, 401, { "WWW-Authenticate": "Bearer" })
-          );
-        }
-        case "InvalidRequestError": {
-          return Effect.succeed(
-            json({ error: { ...body.error, message: error.message } }, 400)
-          );
-        }
-        case "NotFoundError": {
-          return Effect.succeed(json(body, 404));
-        }
-        case "RefreshCooldownError": {
-          return Effect.succeed(json({ ...body, retryAt: error.retryAt }, 429));
-        }
-        case "ApiRateLimitError": {
-          return Effect.succeed(
-            json(body, 429, { "Retry-After": String(error.retryAfterSeconds) })
-          );
-        }
-        case "ProviderRateLimitError": {
-          return Effect.succeed(json(body, 503));
-        }
-        case "SyncInProgressError": {
-          return Effect.succeed(json(body, 409));
-        }
-        case "AuthenticationError": {
-          return Effect.succeed(json(body, 502));
-        }
-        case "InvalidProviderResponseError":
-        case "ProviderUnavailableError": {
-          return Effect.succeed(json(body, 503));
-        }
-        case "DatabaseError": {
-          return Effect.succeed(json(body, 500));
-        }
-        default: {
-          return Effect.succeed(json(body, 500));
-        }
-      }
-    })
-  );
+        400
+      );
+    }
+    case "NotFoundError": {
+      return json(body, 404);
+    }
+    case "RefreshCooldownError": {
+      return json({ ...body, retryAt: error.retryAt }, 429);
+    }
+    case "ApiRateLimitError": {
+      return json(body, 429, {
+        "Retry-After": String(error.retryAfterSeconds ?? 0),
+      });
+    }
+    case "ProviderRateLimitError": {
+      return json(body, 503);
+    }
+    case "SyncInProgressError": {
+      return json(body, 409);
+    }
+    case "AuthenticationError": {
+      return json(body, 502);
+    }
+    case "InvalidProviderResponseError":
+    case "ProviderUnavailableError": {
+      return json(body, 503);
+    }
+    case "DatabaseError": {
+      return json(body, 500);
+    }
+    default: {
+      return json(body, 500);
+    }
+  }
+};
+
+export const routeRequest = (request: Request, config: RuntimeConfig) =>
+  Effect.gen(function* routeRequestResult() {
+    const result = yield* Effect.either(routeRequestProgram(request, config));
+    return result._tag === "Right"
+      ? result.right
+      : handleRequestError(result.left);
+  });

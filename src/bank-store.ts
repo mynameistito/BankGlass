@@ -17,13 +17,10 @@ import type {
 } from "./errors";
 
 export interface BankStoreService {
-  readonly listAccounts: Effect.Effect<
-    readonly Record<string, unknown>[],
-    DatabaseError
-  >;
+  readonly listAccounts: Effect.Effect<readonly BankAccount[], DatabaseError>;
   readonly getAccount: (
     id: string
-  ) => Effect.Effect<Record<string, unknown>, DatabaseError | NotFoundError>;
+  ) => Effect.Effect<BankAccount, DatabaseError | NotFoundError>;
   readonly listTransactions: (
     query: TransactionQuery
   ) => Effect.Effect<TransactionPage, DatabaseError>;

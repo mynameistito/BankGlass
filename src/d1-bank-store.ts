@@ -1,7 +1,12 @@
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Schema } from "effect";
 
 import { BankStore } from "./bank-store";
-import type { SyncStatus, TransactionQuery } from "./domain";
+import type {
+  BankAccount,
+  SyncStatus,
+  TransactionQuery,
+  TransactionRecord,
+} from "./domain";
 import {
   ApiRateLimitError,
   DatabaseError,
@@ -22,6 +27,7 @@ const transactionSelect = `SELECT id, account_id AS accountId, status, transacti
 type, balance, merchant_name AS merchantName, category_name AS categoryName, particulars, code, reference,
 other_account AS otherAccount, card_suffix AS cardSuffix, provider_updated_at AS providerUpdatedAt,
 data_updated_at AS dataUpdatedAt, synced_at AS syncedAt FROM transactions`;
+const CursorSchema = Schema.Struct({ date: Schema.String, id: Schema.String });
 
 export const makeD1BankStore = (db: D1Database) =>
   BankStore.of({
@@ -50,30 +56,31 @@ export const makeD1BankStore = (db: D1Database) =>
           .run();
       }),
     consumeRateLimit: (bucket, now, limit) =>
-      dbEffect("consumeRateLimit", async () => {
-        const expires = now + 60;
-        await db
-          .prepare(`INSERT INTO rate_limits(bucket,count,expires_at) VALUES(?,1,?) ON CONFLICT(bucket) DO UPDATE SET
+      Effect.tryPromise({
+        catch: (cause) =>
+          cause instanceof ApiRateLimitError
+            ? cause
+            : new DatabaseError({ cause, operation: "consumeRateLimit" }),
+        try: async () => {
+          const expires = now + 60;
+          await db
+            .prepare(`INSERT INTO rate_limits(bucket,count,expires_at) VALUES(?,1,?) ON CONFLICT(bucket) DO UPDATE SET
       count=CASE WHEN expires_at<=? THEN 1 ELSE count+1 END, expires_at=CASE WHEN expires_at<=? THEN ? ELSE expires_at END`)
-          .bind(bucket, expires, now, now, expires)
-          .run();
-        const row = await db
-          .prepare(
-            "SELECT count,expires_at AS expiresAt FROM rate_limits WHERE bucket=?"
-          )
-          .bind(bucket)
-          .first<{ count: number; expiresAt: number }>();
-        if (row !== null && row.count > limit) {
-          throw new ApiRateLimitError({
-            retryAfterSeconds: Math.max(1, row.expiresAt - now),
-          });
-        }
-      }).pipe(
-        Effect.catchIf(
-          (error) => error.cause instanceof ApiRateLimitError,
-          (error) => Effect.fail(error.cause as ApiRateLimitError)
-        )
-      ),
+            .bind(bucket, expires, now, now, expires)
+            .run();
+          const row = await db
+            .prepare(
+              "SELECT count,expires_at AS expiresAt FROM rate_limits WHERE bucket=?"
+            )
+            .bind(bucket)
+            .first<{ count: number; expiresAt: number }>();
+          if (row !== null && row.count > limit) {
+            throw new ApiRateLimitError({
+              retryAfterSeconds: Math.max(1, row.expiresAt - now),
+            });
+          }
+        },
+      }).pipe(Effect.asVoid),
     failSync: (now, code) =>
       dbEffect("failSync", async () => {
         await db
@@ -88,7 +95,7 @@ export const makeD1BankStore = (db: D1Database) =>
         db
           .prepare(`${accountSelect} WHERE id = ?`)
           .bind(id)
-          .first<Record<string, unknown>>()
+          .first<BankAccount>()
       ).pipe(
         Effect.flatMap((item) =>
           item === null
@@ -110,7 +117,7 @@ export const makeD1BankStore = (db: D1Database) =>
     listAccounts: dbEffect("listAccounts", async () => {
       const result = await db
         .prepare(`${accountSelect} ORDER BY name`)
-        .all<Record<string, unknown>>();
+        .all<BankAccount>();
       return result.results;
     }),
     listTransactions: (query: TransactionQuery) =>
@@ -134,10 +141,9 @@ export const makeD1BankStore = (db: D1Database) =>
           values.push(query.to);
         }
         if (query.cursor !== null) {
-          const decoded = JSON.parse(atob(query.cursor)) as {
-            readonly date: string;
-            readonly id: string;
-          };
+          const decoded = Schema.decodeUnknownSync(CursorSchema)(
+            JSON.parse(atob(query.cursor))
+          );
           clauses.push(
             "(transaction_at < ? OR (transaction_at = ? AND id < ?))"
           );
@@ -150,7 +156,7 @@ export const makeD1BankStore = (db: D1Database) =>
             `${transactionSelect}${where} ORDER BY transaction_at DESC, id DESC LIMIT ?`
           )
           .bind(...values, query.limit + 1)
-          .all<Record<string, unknown>>();
+          .all<TransactionRecord>();
         const rows = result.results;
         const hasMore = rows.length > query.limit;
         const items = rows.slice(0, query.limit);
@@ -287,5 +293,5 @@ export const makeD1BankStore = (db: D1Database) =>
       }),
   });
 
-export const D1BankStoreLive = (db: D1Database) =>
+export const d1BankStoreLive = (db: D1Database) =>
   Layer.succeed(BankStore, makeD1BankStore(db));

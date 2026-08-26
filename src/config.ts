@@ -37,13 +37,7 @@ const RuntimeConfigSchema = Schema.Struct({
 });
 export type RuntimeConfig = typeof RuntimeConfigSchema.Type;
 
-export interface WorkerSecrets {
-  readonly AKAHU_APP_TOKEN: string;
-  readonly AKAHU_USER_TOKEN: string;
-  readonly API_BEARER_TOKEN: string;
-}
-
-export const parseConfig = (env: Env & WorkerSecrets) =>
+export const parseConfig = (env: Env) =>
   Schema.decodeUnknown(RuntimeConfigSchema)({
     accessAppHostname: env.ACCESS_APP_HOSTNAME,
     accessAudience: env.ACCESS_POLICY_AUD,

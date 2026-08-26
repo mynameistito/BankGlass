@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { BankStore } from "../bank-store";
 import type { RuntimeConfig } from "../config";
-import { D1BankStoreLive } from "../d1-bank-store";
+import { d1BankStoreLive } from "../d1-bank-store";
 import { routeRequest } from "../http-api";
 import { routeMcpRequest } from "../mcp-api";
 import { SyncService } from "../sync-service";
@@ -30,7 +30,7 @@ const requestApi = (request: Request) =>
         SyncService,
         SyncService.of({ synchronize: () => Effect.die("unused") })
       ),
-      Effect.provide(D1BankStoreLive(env.DB))
+      Effect.provide(d1BankStoreLive(env.DB))
     )
   );
 
@@ -119,7 +119,7 @@ describe("Cloudflare HTTP boundary", () => {
         return yield* Effect.promise(() =>
           routeMcpRequest(request, store, config.accessAppHostname)
         );
-      }).pipe(Effect.provide(D1BankStoreLive(env.DB)))
+      }).pipe(Effect.provide(d1BankStoreLive(env.DB)))
     );
     const responseBody = await response.text();
     expect(response.status).toBe(200);
