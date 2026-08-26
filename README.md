@@ -104,7 +104,7 @@ Transaction routes accept `from`, `to`, `limit` (1-200, default 50), and opaque 
 
 ```powershell
 $headers = @{
-  Authorization = "Bearer $env:PERSONAL_BANKING_API_TOKEN"
+  Authorization = "Bearer $env:API_BEARER_TOKEN"
   "CF-Access-Client-Id" = $env:CF_ACCESS_CLIENT_ID
   "CF-Access-Client-Secret" = $env:CF_ACCESS_CLIENT_SECRET
 }
@@ -193,7 +193,7 @@ Cloudflare Workers do not have a fixed outbound IP, so Akahu Personal App IP all
 
 ## Local development
 
-Requirements: Bun and a Cloudflare account.
+Requirements: [Bun](https://bun.sh/) and a Cloudflare account. A local D1 database is enough for tests and development; no BNZ or Akahu account is required to run the test suite.
 
 ```powershell
 bun install
@@ -204,7 +204,7 @@ bun run dev
 
 The Worker intentionally fails closed without a valid Access assertion. Use the automated tests for local boundary testing; use the Access-protected custom hostname for interactive end-to-end calls. Do not add a local authentication bypass.
 
-Create `.dev.vars` locally with:
+Create `.dev.vars` locally with the following values. These are local development secrets and must not be committed:
 
 ```dotenv
 AKAHU_APP_TOKEN=replace-me
@@ -217,15 +217,21 @@ ACCESS_TEAM_DOMAIN=https://your-team.cloudflareaccess.com
 
 `.dev.vars` is ignored by Git. Do not use real credentials in tests; tests use deterministic providers and Miniflare bindings.
 
+Generate a bearer token with PowerShell instead of storing a literal token in shell history:
+
+```powershell
+[Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).ToLowerInvariant()
+```
+
 ## Cloudflare deployment
 
 1. Authenticate: `bunx wrangler login`.
-2. Create D1: `bunx wrangler d1 create bankglass`.
-3. Replace `REPLACE_WITH_D1_DATABASE_ID` in `wrangler.jsonc` with the returned ID.
+2. Create D1 if it does not already exist: `bunx wrangler d1 create bankglass`.
+3. Put the returned database ID in `wrangler.jsonc` as `d1_databases[0].database_id`.
 4. Choose the intended custom hostname and create a Cloudflare Access self-hosted application covering it. Add the owner-email `Allow` policy and agent `Service Auth` policy, and enable Managed OAuth.
-5. Set `ACCESS_APP_HOSTNAME` and `ACCESS_TEAM_DOMAIN` in `wrangler.jsonc` for the custom hostname and team domain. Keep the Access application AUD tag out of `wrangler.jsonc`.
+5. Set `ACCESS_APP_HOSTNAME` and `ACCESS_TEAM_DOMAIN` in `wrangler.jsonc` for the custom hostname and team domain. The Access application's **Application audience (AUD) tag** belongs in a secret, not in `wrangler.jsonc`.
 6. Apply migrations: `bunx wrangler d1 migrations apply bankglass --remote`.
-7. Add secrets interactively:
+7. Add or replace the Worker secrets interactively:
 
 ```powershell
 bunx wrangler secret put AKAHU_APP_TOKEN
@@ -233,6 +239,8 @@ bunx wrangler secret put AKAHU_USER_TOKEN
 bunx wrangler secret put API_BEARER_TOKEN
 bunx wrangler secret put ACCESS_POLICY_AUD
 ```
+
+When prompted, enter the value for each secret. For `ACCESS_POLICY_AUD`, use the **Application audience (AUD) tag** from the Cloudflare Access self-hosted application. Running the same command later replaces the existing secret, for example after creating a new Access application or rotating the API bearer token. Do not put Akahu tokens, the API bearer, or the Access AUD in `wrangler.jsonc`, source control, or command-line arguments.
 
 8. Run verification: `bun run typecheck`, `bun run test`, and `bun run lint`.
 9. Deploy: `bun run deploy`.
