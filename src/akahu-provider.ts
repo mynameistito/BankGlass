@@ -1,0 +1,339 @@
+import { Effect, Layer, Schedule, Schema } from "effect";
+
+import { BankProvider } from "./bank-provider";
+import type { BankProviderError } from "./bank-provider";
+import type {
+  BankAccount,
+  PendingTransaction,
+  PostedTransaction,
+} from "./domain";
+import {
+  AuthenticationError,
+  InvalidProviderResponseError,
+  ProviderRateLimitError,
+  ProviderUnavailableError,
+} from "./errors";
+
+const DateTime = Schema.String.pipe(
+  Schema.filter((value) => !Number.isNaN(Date.parse(value)))
+);
+const NullableString = Schema.optionalWith(Schema.String, { nullable: true });
+const NullableNumber = Schema.optionalWith(Schema.Number, { nullable: true });
+const Meta = Schema.optional(
+  Schema.Struct({
+    card_suffix: NullableString,
+    code: NullableString,
+    other_account: NullableString,
+    particulars: NullableString,
+    reference: NullableString,
+  })
+);
+const AkahuAccount = Schema.Struct({
+  _id: Schema.String,
+  balance: Schema.optional(
+    Schema.Struct({
+      available: NullableNumber,
+      currency: Schema.String,
+      current: Schema.Number,
+    })
+  ),
+  connection: Schema.Struct({ name: Schema.String }),
+  formatted_account: NullableString,
+  meta: Schema.optional(Schema.Struct({ holder: NullableString })),
+  name: Schema.String,
+  refreshed: Schema.optional(
+    Schema.Struct({
+      balance: Schema.optional(DateTime),
+      transactions: Schema.optional(DateTime),
+    })
+  ),
+  status: Schema.Literal("ACTIVE", "INACTIVE"),
+  type: Schema.String,
+});
+const AkahuTransaction = Schema.Struct({
+  _account: Schema.String,
+  _id: Schema.String,
+  amount: Schema.Number,
+  balance: NullableNumber,
+  category: Schema.optional(Schema.Struct({ name: Schema.String })),
+  created_at: DateTime,
+  date: DateTime,
+  description: Schema.String,
+  merchant: Schema.optional(Schema.Struct({ name: Schema.String })),
+  meta: Meta,
+  type: Schema.String,
+  updated_at: DateTime,
+});
+const AkahuPending = Schema.Struct({
+  _account: Schema.String,
+  amount: Schema.Number,
+  date: DateTime,
+  description: Schema.String,
+  meta: Meta,
+  type: Schema.String,
+  updated_at: DateTime,
+});
+const AccountsResponse = Schema.Struct({
+  items: Schema.Array(AkahuAccount),
+  success: Schema.Literal(true),
+});
+const TransactionsResponse = Schema.Struct({
+  cursor: Schema.optional(
+    Schema.Struct({ next: Schema.NullOr(Schema.String) })
+  ),
+  items: Schema.Array(AkahuTransaction),
+  success: Schema.Literal(true),
+});
+const PendingResponse = Schema.Struct({
+  items: Schema.Array(AkahuPending),
+  success: Schema.Literal(true),
+});
+const RefreshResponse = Schema.Struct({ success: Schema.Literal(true) });
+
+export interface AkahuConfig {
+  readonly baseUrl: string;
+  readonly appToken: string;
+  readonly userToken: string;
+}
+
+const decode = <A, I>(
+  schema: Schema.Schema<A, I>,
+  operation: string,
+  input: unknown
+) =>
+  Schema.decodeUnknown(schema)(input).pipe(
+    Effect.mapError(
+      (error) =>
+        new InvalidProviderResponseError({ details: String(error), operation })
+    )
+  );
+
+export const decodeAkahuAccounts = (input: unknown, now: string) =>
+  decode(AccountsResponse, "getAccounts", input).pipe(
+    Effect.map((response) =>
+      response.items.map((item): BankAccount => ({
+        availableBalance: item.balance?.available ?? null,
+        currency: item.balance?.currency ?? null,
+        currentBalance: item.balance?.current ?? null,
+        dataUpdatedAt: now,
+        formattedAccount: item.formatted_account ?? null,
+        holderName: item.meta?.holder ?? null,
+        id: `account_${item._id}`,
+        institution: item.connection.name,
+        name: item.name,
+        providerBalanceRefreshedAt: item.refreshed?.balance ?? null,
+        providerId: item._id,
+        providerTransactionsRefreshedAt: item.refreshed?.transactions ?? null,
+        status: item.status === "ACTIVE" ? "active" : "inactive",
+        syncedAt: now,
+        type: item.type.toLowerCase(),
+      }))
+    )
+  );
+
+const pendingId = (item: typeof AkahuPending.Type) =>
+  Effect.promise(() =>
+    crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(
+        [
+          item._account,
+          item.date,
+          item.description,
+          item.amount,
+          item.type,
+        ].join("\u001F")
+      )
+    )
+  ).pipe(
+    Effect.map(
+      (hash) =>
+        `pending_${[...new Uint8Array(hash)]
+          .slice(0, 16)
+          .map((byte) => byte.toString(16).padStart(2, "0"))
+          .join("")}`
+    )
+  );
+
+const parseResponse = (
+  operation: string,
+  response: Response
+): Effect.Effect<unknown, BankProviderError> => {
+  if (response.status === 401 || response.status === 403) {
+    return Effect.fail(
+      new AuthenticationError({
+        message: "Akahu rejected the configured credentials",
+      })
+    );
+  }
+  if (response.status === 429) {
+    const raw = response.headers.get("Retry-After");
+    return Effect.fail(
+      new ProviderRateLimitError({
+        retryAfterSeconds: raw === null ? null : Math.trunc(Number(raw)),
+      })
+    );
+  }
+  if (!response.ok) {
+    return Effect.fail(
+      new ProviderUnavailableError({
+        cause: `HTTP ${response.status}`,
+        operation,
+      })
+    );
+  }
+  return Effect.tryPromise({
+    catch: (cause) =>
+      new InvalidProviderResponseError({ details: String(cause), operation }),
+    try: () => response.json(),
+  });
+};
+
+export const makeAkahuBankProvider = (
+  config: AkahuConfig,
+  fetchImplementation: typeof fetch = fetch
+) => {
+  const request = (
+    operation: string,
+    path: string,
+    init?: RequestInit
+  ): Effect.Effect<unknown, BankProviderError> =>
+    Effect.tryPromise({
+      catch: (cause) => new ProviderUnavailableError({ cause, operation }),
+      try: () =>
+        fetchImplementation(`${config.baseUrl}${path}`, {
+          ...init,
+          headers: {
+            Accept: "application/json",
+            Authorization: `Bearer ${config.userToken}`,
+            "X-Akahu-Id": config.appToken,
+          },
+        }),
+    }).pipe(
+      Effect.timeoutFail({
+        duration: "10 seconds",
+        onTimeout: () =>
+          new ProviderUnavailableError({ cause: "timeout", operation }),
+      }),
+      Effect.flatMap((response) => parseResponse(operation, response)),
+      Effect.retry({
+        schedule: Schedule.exponential("100 millis").pipe(
+          Schedule.intersect(Schedule.recurs(2))
+        ),
+        while: (error) => error._tag === "ProviderUnavailableError",
+      })
+    );
+
+  const getAccounts = Effect.gen(function* getAccounts() {
+    const now = new Date().toISOString();
+    return yield* request("getAccounts", "/accounts").pipe(
+      Effect.flatMap((body) => decodeAkahuAccounts(body, now))
+    );
+  });
+
+  const getTransactions = ({ start }: { readonly start: string | null }) =>
+    Effect.gen(function* listTransactions() {
+      const items: PostedTransaction[] = [];
+      let cursor: string | null = null;
+      do {
+        const query = new URLSearchParams();
+        if (start !== null) {
+          query.set("start", start);
+        }
+        if (cursor !== null) {
+          query.set("cursor", cursor);
+        }
+        const response = yield* request(
+          "getTransactions",
+          `/transactions?${query.toString()}`
+        ).pipe(
+          Effect.flatMap((body) =>
+            decode(TransactionsResponse, "getTransactions", body)
+          )
+        );
+        const now = new Date().toISOString();
+        items.push(
+          ...response.items.map((item): PostedTransaction => ({
+            accountId: `account_${item._account}`,
+            amount: item.amount,
+            balance: item.balance ?? null,
+            cardSuffix: item.meta?.card_suffix ?? null,
+            categoryName: item.category?.name ?? null,
+            code: item.meta?.code ?? null,
+            currency: "NZD",
+            dataUpdatedAt: now,
+            description: item.description,
+            id: `transaction_${item._id}`,
+            merchantName: item.merchant?.name ?? null,
+            otherAccount: item.meta?.other_account ?? null,
+            particulars: item.meta?.particulars ?? null,
+            providerCreatedAt: item.created_at,
+            providerId: item._id,
+            providerUpdatedAt: item.updated_at,
+            reference: item.meta?.reference ?? null,
+            status: "posted",
+            syncedAt: now,
+            transactionAt: item.date,
+            type: item.type,
+          }))
+        );
+        cursor = response.cursor?.next ?? null;
+      } while (cursor !== null);
+      return items;
+    });
+
+  const getPendingTransactions = Effect.gen(function* getPendingTransactions() {
+    const response = yield* request(
+      "getPendingTransactions",
+      "/transactions/pending"
+    ).pipe(
+      Effect.flatMap((body) =>
+        decode(PendingResponse, "getPendingTransactions", body)
+      )
+    );
+    return yield* Effect.all(
+      response.items.map((item) =>
+        pendingId(item).pipe(
+          Effect.map((id): PendingTransaction => {
+            const now = new Date().toISOString();
+            return {
+              accountId: `account_${item._account}`,
+              amount: item.amount,
+              cardSuffix: item.meta?.card_suffix ?? null,
+              code: item.meta?.code ?? null,
+              currency: "NZD",
+              dataUpdatedAt: now,
+              description: item.description,
+              id,
+              otherAccount: item.meta?.other_account ?? null,
+              particulars: item.meta?.particulars ?? null,
+              providerId: id,
+              providerUpdatedAt: item.updated_at,
+              reference: item.meta?.reference ?? null,
+              status: "pending",
+              syncedAt: now,
+              transactionAt: item.date,
+              type: item.type,
+            };
+          })
+        )
+      )
+    );
+  });
+
+  const requestRefresh = request("requestRefresh", "/refresh", {
+    method: "POST",
+  }).pipe(
+    Effect.flatMap((body) => decode(RefreshResponse, "requestRefresh", body)),
+    Effect.asVoid
+  );
+  return BankProvider.of({
+    getAccounts,
+    getPendingTransactions,
+    getTransactions,
+    requestRefresh,
+  });
+};
+
+export const AkahuBankProviderLive = (config: AkahuConfig) =>
+  Layer.succeed(BankProvider, makeAkahuBankProvider(config));

@@ -1,0 +1,30 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "bankglass",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-26",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "bankglass",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "triggers": { "crons": ["17 3 * * *"] },
+  "vars": {
+    "ACCESS_APP_HOSTNAME": "replace-with-custom-hostname",
+    "ACCESS_POLICY_AUD": "REPLACE_WITH_ACCESS_AUD",
+    "ACCESS_TEAM_DOMAIN": "https://replace-with-team-name.cloudflareaccess.com",
+    "AKAHU_API_BASE_URL": "https://api.akahu.io/v1",
+    "REFRESH_COOLDOWN_SECONDS": "3600",
+    "SYNC_LOOKBACK_DAYS": "14",
+    "API_RATE_LIMIT_PER_MINUTE": "60",
+  },
+  "observability": {
+    "enabled": true,
+    "logs": { "enabled": true, "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 0.1 },
+  },
+}

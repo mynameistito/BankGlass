@@ -1,0 +1,6 @@
+AKAHU_APP_TOKEN=
+AKAHU_USER_TOKEN=
+API_BEARER_TOKEN=
+ACCESS_APP_HOSTNAME=bank.example.com
+ACCESS_POLICY_AUD=
+ACCESS_TEAM_DOMAIN=https://your-team.cloudflareaccess.com
