@@ -1,0 +1,146 @@
+{
+  "info": {
+    "name": "BankGlass REST API",
+    "description": "Requests for the read-only BankGlass REST API. The deployed API requires a REST bearer token and Cloudflare Access service-token headers.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{api_bearer_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.request.headers.upsert({ key: 'CF-Access-Client-Id', value: pm.variables.get('cf_access_client_id') });",
+          "pm.request.headers.upsert({ key: 'CF-Access-Client-Secret', value: pm.variables.get('cf_access_client_secret') });"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://bank.honetito.com"
+    },
+    {
+      "key": "api_bearer_token",
+      "value": ""
+    },
+    {
+      "key": "cf_access_client_id",
+      "value": ""
+    },
+    {
+      "key": "cf_access_client_secret",
+      "value": ""
+    },
+    {
+      "key": "account_id",
+      "value": "replace-with-account-id"
+    },
+    {
+      "key": "cursor",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Accounts",
+      "item": [
+        {
+          "name": "List accounts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/accounts"
+          }
+        },
+        {
+          "name": "Get account",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/accounts/{{account_id}}"
+          }
+        },
+        {
+          "name": "Get account balance",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/accounts/{{account_id}}/balance"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Transactions",
+      "item": [
+        {
+          "name": "List all posted transactions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/v1/transactions?limit=50&from=&to=&cursor=",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "transactions"],
+              "query": [
+                { "key": "limit", "value": "50" },
+                { "key": "from", "value": "", "disabled": true },
+                { "key": "to", "value": "", "disabled": true },
+                { "key": "cursor", "value": "{{cursor}}", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List account transactions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/accounts/{{account_id}}/transactions?limit=50"
+          }
+        },
+        {
+          "name": "List account pending transactions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/accounts/{{account_id}}/pending?limit=50"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Sync",
+      "item": [
+        {
+          "name": "Get sync status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/status"
+          }
+        },
+        {
+          "name": "Request refresh",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/v1/refresh"
+          }
+        }
+      ]
+    }
+  ]
+}
