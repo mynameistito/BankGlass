@@ -102,18 +102,13 @@ All routes first require Cloudflare Access. REST routes additionally require `Au
 
 Transaction routes accept `from`, `to`, `limit` (1-200, default 50), and opaque `cursor`. Dates are ISO 8601. Results sort newest first with stable keyset pagination.
 
-```powershell
-$headers = @{
-  Authorization = "Bearer $env:API_BEARER_TOKEN"
-  "CF-Access-Client-Id" = $env:CF_ACCESS_CLIENT_ID
-  "CF-Access-Client-Secret" = $env:CF_ACCESS_CLIENT_SECRET
-}
-Invoke-RestMethod -Headers $headers https://domain.tld/v1/accounts
-Invoke-RestMethod -Headers $headers "https://domain.tld/v1/transactions?from=2026-08-01T00:00:00Z&limit=50"
-Invoke-RestMethod -Method Post -Headers $headers https://domain.tld/v1/refresh
+```text
+curl "https://domain.tld/v1/accounts" --header "Authorization: Bearer <API_BEARER_TOKEN>" --header "CF-Access-Client-Id: <CF_ACCESS_CLIENT_ID>" --header "CF-Access-Client-Secret: <CF_ACCESS_CLIENT_SECRET>"
+curl "https://domain.tld/v1/transactions?from=2026-08-01T00:00:00Z&limit=50" --header "Authorization: Bearer <API_BEARER_TOKEN>" --header "CF-Access-Client-Id: <CF_ACCESS_CLIENT_ID>" --header "CF-Access-Client-Secret: <CF_ACCESS_CLIENT_SECRET>"
+curl --request POST "https://domain.tld/v1/refresh" --header "Authorization: Bearer <API_BEARER_TOKEN>" --header "CF-Access-Client-Id: <CF_ACCESS_CLIENT_ID>" --header "CF-Access-Client-Secret: <CF_ACCESS_CLIENT_SECRET>"
 ```
 
-An unattended REST client supplies all three headers: the REST bearer plus `CF-Access-Client-Id` and `CF-Access-Client-Secret`.
+Replace the placeholders with values from your secret manager or environment. In PowerShell, use `curl.exe` if `curl` resolves to the legacy `Invoke-WebRequest` alias. An unattended REST client supplies all three headers: the REST bearer plus `CF-Access-Client-Id` and `CF-Access-Client-Secret`.
 
 ## MCP
 
