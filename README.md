@@ -250,7 +250,7 @@ Set `STAGE` explicitly as well, for example `$env:STAGE = "dev"` in PowerShell. 
 
 `ACCESS_POLICY_AUD` is the **Application audience (AUD) tag** from the Cloudflare Access self-hosted application. Do not put Akahu tokens, the API bearer, or the Access AUD in source control or command-line arguments.
 
-4. Run verification: `bun run typecheck`, `bun run test`, and `bun run lint`.
+4. Run verification: `bun run typecheck`, `bun run test`, and `bun run check`.
 5. Validate browser, Managed OAuth, and service-token access, then call `POST /v1/refresh` once to seed D1.
 
 Non-secret settings and deployment resources are in `alchemy.run.ts`: one-hour cooldown, 14-day reconciliation window, 60 authenticated requests/minute, and daily Cron. Configure the `CLOUDFLARE_WORKERS_SUBDOMAIN` repository variable with the account's Workers subdomain so preview deployments can allow their `workers.dev` hostname.
