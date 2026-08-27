@@ -10,7 +10,10 @@ import { Config, Effect } from "effect";
 
 // The deploy action sets STAGE before invoking Alchemy so preview resources
 // receive the same stable names as the action's preview URL matcher.
-const stage = process.env["STAGE"] ?? "prod";
+const stage = process.env["STAGE"];
+if (!stage) {
+  throw new Error("STAGE must be set explicitly before deploying");
+}
 const isProduction = stage === "prod";
 
 export const Worker = Effect.gen(function* defineWorker() {
@@ -40,7 +43,7 @@ export const Worker = Effect.gen(function* defineWorker() {
       SYNC_LOOKBACK_DAYS: "14",
     },
     main: "./src/index.ts",
-    name: `bankglass-${stage}`,
+    name: isProduction ? "bankglass" : `bankglass-${stage}`,
     observability: {
       enabled: true,
       logs: { enabled: true, headSamplingRate: 1, invocationLogs: true },

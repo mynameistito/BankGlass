@@ -238,14 +238,22 @@ AKAHU_APP_TOKEN=...
 AKAHU_USER_TOKEN=...
 API_BEARER_TOKEN=...
 ACCESS_POLICY_AUD=...
+ACCESS_APP_HOSTNAME=...
+ACCESS_TEAM_DOMAIN=https://your-team.cloudflareaccess.com
+AKAHU_API_BASE_URL=https://api.akahu.io/v1
+REFRESH_COOLDOWN_SECONDS=3600
+SYNC_LOOKBACK_DAYS=14
+API_RATE_LIMIT_PER_MINUTE=60
 ```
+
+Set `STAGE` explicitly as well, for example `$env:STAGE = "dev"` in PowerShell. Production requires `STAGE=prod`.
 
 `ACCESS_POLICY_AUD` is the **Application audience (AUD) tag** from the Cloudflare Access self-hosted application. Do not put Akahu tokens, the API bearer, or the Access AUD in source control or command-line arguments.
 
 4. Run verification: `bun run typecheck`, `bun run test`, and `bun run lint`.
 5. Validate browser, Managed OAuth, and service-token access, then call `POST /v1/refresh` once to seed D1.
 
-Non-secret settings and deployment resources are in `alchemy.run.ts`: one-hour cooldown, 14-day reconciliation window, 60 authenticated requests/minute, and daily Cron.
+Non-secret settings and deployment resources are in `alchemy.run.ts`: one-hour cooldown, 14-day reconciliation window, 60 authenticated requests/minute, and daily Cron. Configure the `CLOUDFLARE_WORKERS_SUBDOMAIN` repository variable with the account's Workers subdomain so preview deployments can allow their `workers.dev` hostname.
 
 ## Security and threat model
 
