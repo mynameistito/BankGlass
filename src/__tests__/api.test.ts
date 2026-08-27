@@ -79,6 +79,21 @@ describe("Cloudflare HTTP boundary", () => {
     });
   });
 
+  it("requires strict ISO 8601 date-times for transaction filters", async () => {
+    const response = await requestApi(
+      new Request("https://example.test/v1/transactions?from=2026-08-27", {
+        headers,
+      })
+    );
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        code: "INVALID_REQUEST",
+        message: "from must be an ISO 8601 date-time",
+      },
+    });
+  });
+
   it("reads account data from D1 rather than the provider", async () => {
     await env.DB.prepare(`INSERT INTO accounts(id,provider_id,institution,name,type,status,currency,current_balance,available_balance,data_updated_at,synced_at)
       VALUES('account_test','provider_test','BNZ','Everyday','checking','active','NZD',20,18,'2026-08-26T00:00:00.000Z','2026-08-26T00:00:00.000Z')`).run();

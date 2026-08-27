@@ -78,7 +78,7 @@ describe("D1 banking persistence", () => {
       env.DB.prepare("DELETE FROM accounts"),
       env.DB.prepare("DELETE FROM rate_limits"),
       env.DB.prepare(
-        "UPDATE sync_state SET status='idle',last_provider_refresh_requested_at=NULL"
+        "UPDATE sync_state SET status='idle',started_at=NULL,last_provider_refresh_requested_at=NULL"
       ),
     ]);
   });
@@ -169,5 +169,28 @@ describe("D1 banking persistence", () => {
       Effect.flip(store.consumeRateLimit("test", 100, 1))
     );
     expect(error._tag).toBe("ApiRateLimitError");
+  });
+
+  it("recovers a stale synchronization lock", async () => {
+    await env.DB.prepare("UPDATE sync_state SET status='syncing',started_at=?")
+      .bind("2026-08-25T00:00:00.000Z")
+      .run();
+
+    await Effect.runPromise(store.acquireSync(time));
+
+    const status = await Effect.runPromise(store.getSyncStatus);
+    expect(status.status).toBe("syncing");
+    expect(status.startedAt).toBe(time);
+  });
+
+  it("rejects an active synchronization lock", async () => {
+    await env.DB.prepare("UPDATE sync_state SET status='syncing',started_at=?")
+      .bind("2026-08-26T00:00:00.000Z")
+      .run();
+
+    const error = await Effect.runPromise(
+      Effect.flip(store.acquireSync("2026-08-26T00:01:00.000Z"))
+    );
+    expect(error._tag).toBe("SyncInProgressError");
   });
 });

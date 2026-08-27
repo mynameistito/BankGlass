@@ -52,7 +52,6 @@ export interface BankStoreService {
     limit: number
   ) => Effect.Effect<void, DatabaseError | ApiRateLimitError>;
 }
-export class BankStore extends Context.Tag("@bankglass/BankStore")<
-  BankStore,
-  BankStoreService
->() {}
+export class BankStore extends Context.Service<BankStore, BankStoreService>()(
+  "@bankglass/BankStore"
+) {}

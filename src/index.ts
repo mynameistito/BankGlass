@@ -1,5 +1,6 @@
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Result } from "effect";
 
+import type { WorkerEnv } from "../alchemy.run";
 import { authenticateAccess } from "./access-auth";
 import { akahuBankProviderLive } from "./akahu-provider";
 import { BankStore } from "./bank-store";
@@ -9,7 +10,7 @@ import { routeRequest } from "./http-api";
 import { routeMcpRequest } from "./mcp-api";
 import { SyncService, syncServiceLive } from "./sync-service";
 
-const programLayer = (env: Env, cooldown: number, lookback: number) => {
+const programLayer = (env: WorkerEnv, cooldown: number, lookback: number) => {
   const dependencies = Layer.merge(
     d1BankStoreLive(env.DB),
     akahuBankProviderLive({
@@ -80,7 +81,7 @@ const runMcpRequest = (
     try: () => routeMcpRequest(request, store, hostname),
   });
 
-const run = (request: Request, env: Env) =>
+const run = (request: Request, env: WorkerEnv) =>
   Effect.gen(function* runRequest() {
     const config = yield* parseConfig(env);
     return yield* Effect.gen(function* authenticatedRequest() {
@@ -89,23 +90,23 @@ const run = (request: Request, env: Env) =>
         const store = yield* BankStore;
         const nowSeconds = Math.floor(Date.now() / 1000);
         return yield* Effect.gen(function* limitedMcpRequest() {
-          const rateLimit = yield* Effect.either(
+          const rateLimit = yield* Effect.result(
             store.consumeRateLimit(
               `mcp:${Math.floor(nowSeconds / 60)}`,
               nowSeconds,
               Number(config.apiRateLimitPerMinute)
             )
           );
-          if (rateLimit._tag === "Left") {
-            return rateLimit.left._tag === "ApiRateLimitError"
-              ? rateLimitedResponse(rateLimit.left.retryAfterSeconds)
+          if (Result.isFailure(rateLimit)) {
+            return rateLimit.failure._tag === "ApiRateLimitError"
+              ? rateLimitedResponse(rateLimit.failure.retryAfterSeconds)
               : internalErrorResponse();
           }
-          const response = yield* Effect.either(
+          const response = yield* Effect.result(
             runMcpRequest(request, store, config.accessAppHostname)
           );
-          return response._tag === "Right"
-            ? response.right
+          return Result.isSuccess(response)
+            ? response.success
             : internalErrorResponse();
         });
       }
@@ -123,26 +124,29 @@ const run = (request: Request, env: Env) =>
     Effect.catchTag("UnauthorizedAccessRequestError", () =>
       Effect.succeed(accessDeniedResponse())
     ),
-    Effect.catchAll(() =>
-      Effect.succeed(
-        Response.json(
-          {
-            error: {
-              code: "CONFIGURATION_ERROR",
-              message: "Service configuration is invalid",
+    Effect.catchIf(
+      () => true,
+      () =>
+        Effect.succeed(
+          Response.json(
+            {
+              error: {
+                code: "CONFIGURATION_ERROR",
+                message: "Service configuration is invalid",
+              },
             },
-          },
-          { status: 500 }
+            { status: 500 }
+          )
         )
-      )
     )
   );
 
 export default {
-  fetch: (request: Request, env: Env) => Effect.runPromise(run(request, env)),
+  fetch: (request: Request, env: WorkerEnv) =>
+    Effect.runPromise(run(request, env)),
   scheduled: (
     _controller: ScheduledController,
-    env: Env,
+    env: WorkerEnv,
     context: ExecutionContext
   ) => {
     const sync = Effect.gen(function* sync() {
@@ -159,13 +163,13 @@ export default {
       )
     );
     const completion = Effect.gen(function* scheduledCompletion() {
-      const result = yield* Effect.either(sync);
-      if (result._tag === "Left") {
+      const result = yield* Effect.result(sync);
+      if (Result.isFailure(result)) {
         yield* Effect.logError("Scheduled synchronization failed", {
-          errorTag: result.left._tag,
+          errorTag: result.failure._tag,
         });
       }
     });
     context.waitUntil(Effect.runPromise(completion));
   },
-} satisfies ExportedHandler<Env>;
+} satisfies ExportedHandler<WorkerEnv>;

@@ -1,0 +1,47 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  pull_request:
+    types: [closed]
+
+jobs:
+  deploy:
+    if: >-
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') || (github.event_name == 'pull_request' && github.event.action == 'closed')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: alchemy-deploy-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.event.workflow_run.event == 'pull_request' && format('pr-{0}', github.event.workflow_run.pull_requests[0].number) || github.event.workflow_run.event == 'push' && 'prod' || 'invalid' }}
+      cancel-in-progress: false
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
+      pull-requests: write
+    steps:
+      - name: Run Alchemy deployment
+        # Same-repository preview code runs with deployment credentials.
+        uses: mynameistito/alchemy-deploy@d42b56ce1471dde5c5654c722b79701a1c60e9eb # v2.2.0
+        env:
+          AKAHU_APP_TOKEN: ${{ secrets.AKAHU_APP_TOKEN }}
+          AKAHU_USER_TOKEN: ${{ secrets.AKAHU_USER_TOKEN }}
+          API_BEARER_TOKEN: ${{ secrets.API_BEARER_TOKEN }}
+          ACCESS_POLICY_AUD: ${{ secrets.ACCESS_POLICY_AUD }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACCESS_APP_HOSTNAME: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' && format('bankglass-pr-{0}.{1}.workers.dev', github.event.workflow_run.pull_requests[0].number, vars.CLOUDFLARE_WORKERS_SUBDOMAIN) || vars.ACCESS_APP_HOSTNAME || 'bank.honetito.com' }}
+          ACCESS_TEAM_DOMAIN: ${{ vars.ACCESS_TEAM_DOMAIN }}
+          AKAHU_API_BASE_URL: ${{ vars.AKAHU_API_BASE_URL || 'https://api.akahu.io/v1' }}
+          API_RATE_LIMIT_PER_MINUTE: ${{ vars.API_RATE_LIMIT_PER_MINUTE || '60' }}
+          REFRESH_COOLDOWN_SECONDS: ${{ vars.REFRESH_COOLDOWN_SECONDS || '3600' }}
+          SYNC_LOOKBACK_DAYS: ${{ vars.SYNC_LOOKBACK_DAYS || '14' }}
+        with:
+          worker-name: bankglass
+          deploy-command: bunx --no-install alchemy deploy --stage "$STAGE" --yes
+          destroy-command: bunx --no-install alchemy destroy --stage "$STAGE" --yes
+          production-stage: prod
+          production-url: https://bank.honetito.com
+          use-adopt: true

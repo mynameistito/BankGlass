@@ -1,4 +1,5 @@
-import { Effect, Schema } from "effect";
+import { Effect, Result, Schema } from "effect";
+import { z } from "zod";
 
 import { authenticate } from "./auth";
 import { BankStore } from "./bank-store";
@@ -25,11 +26,12 @@ const json = (body: JsonValue, status = 200, extra: HeadersInit = {}) =>
 const routeNotFound = {
   error: { code: "NOT_FOUND", message: "Route not found" },
 };
+const IsoDateTimeSchema = z.iso.datetime({ offset: true });
 const parseDate = (value: string | null, name: string) => {
   if (value === null) {
     return null;
   }
-  if (Number.isNaN(Date.parse(value))) {
+  if (!IsoDateTimeSchema.safeParse(value).success) {
     throw new InvalidRequestError({
       message: `${name} must be an ISO 8601 date-time`,
     });
@@ -232,8 +234,8 @@ const handleRequestError = (error: RequestError) => {
 
 export const routeRequest = (request: Request, config: RuntimeConfig) =>
   Effect.gen(function* routeRequestResult() {
-    const result = yield* Effect.either(routeRequestProgram(request, config));
-    return result._tag === "Right"
-      ? result.right
-      : handleRequestError(result.left);
+    const result = yield* Effect.result(routeRequestProgram(request, config));
+    return Result.isSuccess(result)
+      ? result.success
+      : handleRequestError(result.failure);
   });

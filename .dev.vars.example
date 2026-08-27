@@ -4,3 +4,7 @@ API_BEARER_TOKEN= # [Convert]::ToHexString([Security.Cryptography.RandomNumberGe
 ACCESS_APP_HOSTNAME=bank.example.com
 ACCESS_POLICY_AUD=
 ACCESS_TEAM_DOMAIN=https://your-team.cloudflareaccess.com
+AKAHU_API_BASE_URL=https://api.akahu.io/v1
+REFRESH_COOLDOWN_SECONDS=3600
+SYNC_LOOKBACK_DAYS=14
+API_RATE_LIMIT_PER_MINUTE=60
