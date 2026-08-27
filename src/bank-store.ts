@@ -35,7 +35,8 @@ export interface BankStoreService {
   readonly getSyncStatus: Effect.Effect<SyncStatus, DatabaseError>;
   readonly acquireSync: (
     now: string,
-    leaseId: string
+    leaseId: string,
+    providerRefreshAllowedBefore: string | null
   ) => Effect.Effect<void, DatabaseError | SyncInProgressError>;
   readonly markRefreshRequested: (
     now: string,

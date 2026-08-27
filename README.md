@@ -114,19 +114,19 @@ BankGlass includes an Alchemy deployment and a GitHub Actions workflow. Before d
 
 Set these secrets in your environment or GitHub repository:
 
-| Secret                 | Purpose                                      |
-| ---------------------- | -------------------------------------------- |
-| `AKAHU_APP_TOKEN`      | Akahu Personal App ID token                  |
-| `AKAHU_USER_TOKEN`     | Akahu user access token                      |
-| `API_BEARER_TOKEN`     | Additional authentication for `/v1/*` routes |
-| `ACCESS_POLICY_AUD`    | Audience tag of the Access application       |
-| `CLOUDFLARE_API_TOKEN` | Cloudflare deployment credential             |
+| Secret                  | Purpose                                      |
+| ----------------------- | -------------------------------------------- |
+| `AKAHU_APP_TOKEN`       | Akahu Personal App ID token                  |
+| `AKAHU_USER_TOKEN`      | Akahu user access token                      |
+| `API_BEARER_TOKEN`      | Additional authentication for `/v1/*` routes |
+| `ACCESS_POLICY_AUD`     | Audience tag of the Access application       |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account used for deployment       |
+| `CLOUDFLARE_API_TOKEN`  | Cloudflare deployment credential             |
 
 Set these non-secret values:
 
 | Variable | Example | Default |
 | --- | --- | --- |
-| `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare account ID | Required |
 | `ACCESS_APP_HOSTNAME` | `bank.example.com` | Required |
 | `ACCESS_TEAM_DOMAIN` | `https://example.cloudflareaccess.com` | Required |
 | `AKAHU_API_BASE_URL` | `https://api.akahu.io/v1` | Shown value |

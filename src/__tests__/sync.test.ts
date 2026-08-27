@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { BankProvider } from "../bank-provider";
 import { BankStore } from "../bank-store";
+import { SyncInProgressError } from "../errors";
 import { makeSyncService } from "../sync-service";
 
 describe("synchronization policy", () => {
@@ -10,6 +11,7 @@ describe("synchronization policy", () => {
     let acquireCalls = 0;
     let failCalls = 0;
     let refreshCalls = 0;
+    const events: string[] = [];
     const provider = BankProvider.of({
       getAccounts: Effect.succeed([]),
       getPendingTransactions: Effect.succeed([]),
@@ -20,8 +22,10 @@ describe("synchronization policy", () => {
     });
     const store = BankStore.of({
       acquireSync: () =>
-        Effect.sync(() => {
+        Effect.gen(function* rejectAcquire() {
           acquireCalls += 1;
+          events.push("acquire");
+          return yield* Effect.fail(new SyncInProgressError({}));
         }),
       completeSync: () => Effect.void,
       consumeRateLimit: () => Effect.void,
@@ -30,15 +34,18 @@ describe("synchronization policy", () => {
           failCalls += 1;
         }),
       getAccount: () => Effect.die("unused"),
-      getSyncStatus: Effect.succeed({
-        errorCode: null,
-        errorMessage: null,
-        lastAttemptAt: null,
-        lastProviderRefreshRequestedAt: new Date().toISOString(),
-        lastSuccessAt: null,
-        providerRefreshedAt: null,
-        startedAt: null,
-        status: "idle",
+      getSyncStatus: Effect.sync(() => {
+        events.push("status");
+        return {
+          errorCode: null,
+          errorMessage: null,
+          lastAttemptAt: null,
+          lastProviderRefreshRequestedAt: new Date().toISOString(),
+          lastSuccessAt: null,
+          providerRefreshedAt: null,
+          startedAt: null,
+          status: "idle",
+        };
       }),
       listAccounts: Effect.succeed([]),
       listTransactions: () => Effect.succeed({ items: [], nextCursor: null }),
@@ -56,7 +63,8 @@ describe("synchronization policy", () => {
       Effect.flip(service.synchronize({ requestProviderRefresh: true }))
     );
     expect(error._tag).toBe("RefreshCooldownError");
-    expect(acquireCalls).toBe(0);
+    expect(acquireCalls).toBe(1);
+    expect(events).toStrictEqual(["acquire", "status"]);
     expect(failCalls).toBe(0);
     expect(refreshCalls).toBe(0);
   });

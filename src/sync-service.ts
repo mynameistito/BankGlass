@@ -1,4 +1,4 @@
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Result } from "effect";
 
 import { BankProvider } from "./bank-provider";
 import type { BankProviderError } from "./bank-provider";
@@ -48,23 +48,31 @@ export const makeSyncService = (
         readonly requestProviderRefresh: boolean;
       }) {
         const startedAt = new Date().toISOString();
-        if (options.requestProviderRefresh) {
-          const status = yield* store.getSyncStatus;
-          if (status.lastProviderRefreshRequestedAt !== null) {
-            const retryAtMs =
-              Date.parse(status.lastProviderRefreshRequestedAt) +
-              cooldownSeconds * 1000;
-            if (retryAtMs > Date.now()) {
-              return yield* Effect.fail(
-                new RefreshCooldownError({
-                  retryAt: new Date(retryAtMs).toISOString(),
-                })
-              );
+        const providerRefreshAllowedBefore = options.requestProviderRefresh
+          ? new Date(Date.now() - cooldownSeconds * 1000).toISOString()
+          : null;
+        const leaseId = crypto.randomUUID();
+        const acquisition = yield* Effect.result(
+          store.acquireSync(startedAt, leaseId, providerRefreshAllowedBefore)
+        );
+        if (Result.isFailure(acquisition)) {
+          if (options.requestProviderRefresh) {
+            const status = yield* store.getSyncStatus;
+            if (status.lastProviderRefreshRequestedAt !== null) {
+              const retryAtMs =
+                Date.parse(status.lastProviderRefreshRequestedAt) +
+                cooldownSeconds * 1000;
+              if (retryAtMs > Date.now()) {
+                return yield* Effect.fail(
+                  new RefreshCooldownError({
+                    retryAt: new Date(retryAtMs).toISOString(),
+                  })
+                );
+              }
             }
           }
+          return yield* Effect.fail(acquisition.failure);
         }
-        const leaseId = crypto.randomUUID();
-        yield* store.acquireSync(startedAt, leaseId);
         const run = Effect.gen(function* run() {
           if (options.requestProviderRefresh) {
             yield* provider.requestRefresh;

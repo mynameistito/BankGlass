@@ -34,13 +34,21 @@ const requireLease = (owned: boolean) =>
 
 export const makeD1BankStore = (db: D1Database) =>
   BankStore.of({
-    acquireSync: (now, leaseId) =>
+    acquireSync: (now, leaseId, providerRefreshAllowedBefore) =>
       dbEffect("acquireSync", () =>
         db
           .prepare(
-            "UPDATE sync_state SET status='syncing',started_at=?,last_attempt_at=?,lease_id=?,error_code=NULL,error_message=NULL WHERE singleton=1 AND (status NOT IN ('syncing','refreshing') OR started_at IS NULL OR julianday(started_at) <= julianday(?) - ? / 86400.0)"
+            "UPDATE sync_state SET status='syncing',started_at=?,last_attempt_at=?,lease_id=?,error_code=NULL,error_message=NULL WHERE singleton=1 AND (status NOT IN ('syncing','refreshing') OR started_at IS NULL OR julianday(started_at) <= julianday(?) - ? / 86400.0) AND (? IS NULL OR last_provider_refresh_requested_at IS NULL OR julianday(last_provider_refresh_requested_at) <= julianday(?))"
           )
-          .bind(now, now, leaseId, now, syncLeaseSeconds)
+          .bind(
+            now,
+            now,
+            leaseId,
+            now,
+            syncLeaseSeconds,
+            providerRefreshAllowedBefore,
+            providerRefreshAllowedBefore
+          )
           .run()
       ).pipe(
         Effect.flatMap((result) =>

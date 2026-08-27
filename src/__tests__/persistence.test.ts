@@ -85,7 +85,7 @@ describe("D1 banking persistence", () => {
   });
 
   it("upserts duplicate posted transactions idempotently", async () => {
-    await Effect.runPromise(store.acquireSync(time, leaseId));
+    await Effect.runPromise(store.acquireSync(time, leaseId, null));
     const snapshot = {
       accounts: [account],
       leaseId,
@@ -103,7 +103,7 @@ describe("D1 banking persistence", () => {
   });
 
   it("rebuilds pending data when a transaction settles", async () => {
-    await Effect.runPromise(store.acquireSync(time, leaseId));
+    await Effect.runPromise(store.acquireSync(time, leaseId, null));
     await Effect.runPromise(
       store.saveSnapshot({
         accounts: [account],
@@ -131,7 +131,7 @@ describe("D1 banking persistence", () => {
   });
 
   it("uses stable cursor pagination without overlap", async () => {
-    await Effect.runPromise(store.acquireSync(time, leaseId));
+    await Effect.runPromise(store.acquireSync(time, leaseId, null));
     const second = {
       ...posted,
       id: "transaction_u",
@@ -191,7 +191,7 @@ describe("D1 banking persistence", () => {
   });
 
   it("returns the provider ID with stored accounts", async () => {
-    await Effect.runPromise(store.acquireSync(time, leaseId));
+    await Effect.runPromise(store.acquireSync(time, leaseId, null));
     await Effect.runPromise(
       store.saveSnapshot({
         accounts: [account],
@@ -213,11 +213,34 @@ describe("D1 banking persistence", () => {
       .bind("2026-08-25T00:00:00.000Z")
       .run();
 
-    await Effect.runPromise(store.acquireSync(time, leaseId));
+    await Effect.runPromise(store.acquireSync(time, leaseId, null));
 
     const status = await Effect.runPromise(store.getSyncStatus);
     expect(status.status).toBe("syncing");
     expect(status.startedAt).toBe(time);
+  });
+
+  it("atomically rejects a lease inside the provider refresh cooldown", async () => {
+    await env.DB.prepare(
+      "UPDATE sync_state SET last_provider_refresh_requested_at=?"
+    )
+      .bind(time)
+      .run();
+
+    const error = await Effect.runPromise(
+      Effect.flip(
+        store.acquireSync(
+          "2026-08-26T00:30:00.000Z",
+          "cooldown-lease",
+          "2026-08-25T23:30:00.000Z"
+        )
+      )
+    );
+
+    const status = await Effect.runPromise(store.getSyncStatus);
+    expect(error._tag).toBe("SyncInProgressError");
+    expect(status.status).toBe("idle");
+    expect(status.startedAt).toBeNull();
   });
 
   it("rejects an active synchronization lock", async () => {
@@ -226,15 +249,17 @@ describe("D1 banking persistence", () => {
       .run();
 
     const error = await Effect.runPromise(
-      Effect.flip(store.acquireSync("2026-08-26T00:01:00.000Z", "second-lease"))
+      Effect.flip(
+        store.acquireSync("2026-08-26T00:01:00.000Z", "second-lease", null)
+      )
     );
     expect(error._tag).toBe("SyncInProgressError");
   });
 
   it("prevents a stale lease from writing or completing a newer sync", async () => {
-    await Effect.runPromise(store.acquireSync(time, "stale-lease"));
+    await Effect.runPromise(store.acquireSync(time, "stale-lease", null));
     await Effect.runPromise(
-      store.acquireSync("2026-08-26T00:06:00.000Z", "current-lease")
+      store.acquireSync("2026-08-26T00:06:00.000Z", "current-lease", null)
     );
 
     const saveError = await Effect.runPromise(
