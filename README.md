@@ -192,7 +192,7 @@ Requirements: [Bun](https://bun.sh/) and a Cloudflare account. A local D1 databa
 
 ```powershell
 bun install
-Copy-Item .dev.vars.example .env
+Copy-Item .dev.vars.example .dev.vars
 bun run dev
 ```
 
@@ -200,7 +200,7 @@ Alchemy does not automatically read Wrangler's `.dev.vars`; the `dev` script pas
 
 The Worker intentionally fails closed without a valid Access assertion. Use the automated tests for local boundary testing; use the Access-protected custom hostname for interactive end-to-end calls. Do not add a local authentication bypass.
 
-Create `.env` locally with the following values. These are local development secrets and must not be committed:
+Create `.dev.vars` locally with the following values. These are local development secrets and must not be committed:
 
 ```dotenv
 AKAHU_APP_TOKEN=replace-me
@@ -215,7 +215,7 @@ SYNC_LOOKBACK_DAYS=14
 API_RATE_LIMIT_PER_MINUTE=60
 ```
 
-`.env` is ignored by Git. Do not use real credentials in tests; tests use deterministic providers and Miniflare bindings.
+`.dev.vars` and `.env` are ignored by Git. Do not use real credentials in tests; tests use deterministic providers and Miniflare bindings.
 
 Generate a bearer token with OpenSSL instead of storing a literal token in shell history:
 
@@ -225,7 +225,7 @@ openssl rand -hex 32
 
 ## Cloudflare deployment
 
-1. Add `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `AKAHU_APP_TOKEN`, `AKAHU_USER_TOKEN`, `API_BEARER_TOKEN`, and `ACCESS_POLICY_AUD` to the deployment environment. Add `ACCESS_TEAM_DOMAIN` as a repository variable.
+1. Add `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `AKAHU_APP_TOKEN`, `AKAHU_USER_TOKEN`, and `API_BEARER_TOKEN` as deployment secrets. Add `ACCESS_POLICY_AUD` as a secret and `ACCESS_TEAM_DOMAIN`, `AKAHU_API_BASE_URL`, `API_RATE_LIMIT_PER_MINUTE`, `REFRESH_COOLDOWN_SECONDS`, `SYNC_LOOKBACK_DAYS`, `ACCESS_APP_HOSTNAME`, and `CLOUDFLARE_WORKERS_SUBDOMAIN` as repository variables.
 2. Create a Cloudflare Access self-hosted application covering `bank.honetito.com`. Add the owner-email `Allow` policy and agent `Service Auth` policy, and enable Managed OAuth.
 3. Deploy locally with `bun run deploy`, or merge to `main` and let `.github/workflows/deploy.yml` run the pinned `mynameistito/alchemy-deploy` action.
 

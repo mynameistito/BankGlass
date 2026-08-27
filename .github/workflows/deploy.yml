@@ -44,4 +44,4 @@ jobs:
           destroy-command: bunx --no-install alchemy destroy --stage "$STAGE" --yes
           production-stage: prod
           production-url: https://bank.honetito.com
-          use-adopt: false
+          use-adopt: true
