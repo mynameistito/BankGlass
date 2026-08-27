@@ -21,7 +21,7 @@ export const Worker = Effect.gen(function* defineWorker() {
 
   return yield* WorkerResource("Worker", {
     compatibility: {
-      date: "2026-08-26",
+      date: "2026-07-11",
       flags: ["nodejs_compat"],
     },
     crons: ["17 3 * * *"],

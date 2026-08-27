@@ -245,7 +245,7 @@ ACCESS_POLICY_AUD=...
 4. Run verification: `bun run typecheck`, `bun run test`, and `bun run lint`.
 5. Validate browser, Managed OAuth, and service-token access, then call `POST /v1/refresh` once to seed D1.
 
-Non-secret settings and deployment resources are in `alchemy.run.ts`: one-hour cooldown, 14-day reconciliation window, 60 authenticated requests/minute, and daily Cron. `wrangler.jsonc` remains only as the local Vitest/Miniflare compatibility configuration.
+Non-secret settings and deployment resources are in `alchemy.run.ts`: one-hour cooldown, 14-day reconciliation window, 60 authenticated requests/minute, and daily Cron.
 
 ## Security and threat model
 
