@@ -26,25 +26,31 @@ export interface BankStoreService {
   ) => Effect.Effect<TransactionPage, DatabaseError>;
   readonly saveSnapshot: (snapshot: {
     readonly accounts: readonly BankAccount[];
+    readonly leaseId: string;
     readonly posted: readonly PostedTransaction[];
     readonly pending: readonly PendingTransaction[];
     readonly reconcilePostedFrom: string;
     readonly syncedAt: string;
-  }) => Effect.Effect<void, DatabaseError>;
+  }) => Effect.Effect<void, DatabaseError | SyncInProgressError>;
   readonly getSyncStatus: Effect.Effect<SyncStatus, DatabaseError>;
   readonly acquireSync: (
-    now: string
+    now: string,
+    leaseId: string,
+    providerRefreshAllowedBefore: string | null
   ) => Effect.Effect<void, DatabaseError | SyncInProgressError>;
   readonly markRefreshRequested: (
-    now: string
-  ) => Effect.Effect<void, DatabaseError>;
+    now: string,
+    leaseId: string
+  ) => Effect.Effect<void, DatabaseError | SyncInProgressError>;
   readonly completeSync: (
     now: string,
-    providerRefreshedAt: string | null
-  ) => Effect.Effect<void, DatabaseError>;
+    providerRefreshedAt: string | null,
+    leaseId: string
+  ) => Effect.Effect<void, DatabaseError | SyncInProgressError>;
   readonly failSync: (
     now: string,
-    code: string
+    code: string,
+    leaseId: string
   ) => Effect.Effect<void, DatabaseError>;
   readonly consumeRateLimit: (
     bucket: string,

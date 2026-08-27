@@ -1,6 +1,7 @@
 {
   "name": "bankglass",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "module": "src/index.ts",
   "scripts": {
@@ -33,5 +34,6 @@
     "ultracite": "7.10.6",
     "vitest": "^4.1.11",
     "wrangler": "^4.126.0"
-  }
+  },
+  "packageManager": "bun@1.4.0"
 }

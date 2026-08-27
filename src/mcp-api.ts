@@ -49,7 +49,7 @@ const createServer = (store: BankStoreService) => {
     "list_accounts",
     {
       annotations: readOnlyAnnotations,
-      description: "List the owner's locally cached BNZ accounts and balances",
+      description: "List the owner's locally cached accounts and balances",
       inputSchema: z.object({}),
     },
     () => runTool(store.listAccounts)

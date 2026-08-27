@@ -80,11 +80,96 @@ describe("Akahu provider boundary", () => {
         return Promise.resolve(
           calls < 3
             ? new Response(null, { status: 503 })
-            : Response.json({ success: true })
+            : Response.json({ items: [], success: true })
         );
       }
     );
-    await Effect.runPromise(provider.requestRefresh);
+    await Effect.runPromise(provider.getAccounts);
     expect(calls).toBe(3);
+  });
+
+  it("does not retry refresh requests", async () => {
+    let calls = 0;
+    const provider = makeAkahuBankProvider(
+      {
+        appToken: "app",
+        baseUrl: "https://api.example.test",
+        userToken: "user",
+      },
+      () => {
+        calls += 1;
+        return Promise.resolve(new Response(null, { status: 503 }));
+      }
+    );
+
+    const error = await Effect.runPromise(Effect.flip(provider.requestRefresh));
+
+    expect(error._tag).toBe("ProviderUnavailableError");
+    expect(calls).toBe(1);
+  });
+
+  it("aborts a refresh when its response body times out", async () => {
+    let aborted = false;
+    const provider = makeAkahuBankProvider(
+      {
+        appToken: "app",
+        baseUrl: "https://api.example.test",
+        requestTimeoutMs: 5,
+        userToken: "user",
+      },
+      (_input, init) =>
+        Promise.resolve(
+          new Response(
+            new ReadableStream({
+              start: (controller) => {
+                init?.signal?.addEventListener(
+                  "abort",
+                  () => {
+                    aborted = true;
+                    controller.error(new DOMException("Aborted", "AbortError"));
+                  },
+                  { once: true }
+                );
+              },
+            })
+          )
+        )
+    );
+
+    const error = await Effect.runPromise(Effect.flip(provider.requestRefresh));
+
+    expect(error).toMatchObject({
+      _tag: "ProviderUnavailableError",
+      cause: "timeout",
+    });
+    expect(aborted).toBeTruthy();
+  });
+
+  it("rejects repeated transaction cursors", async () => {
+    let calls = 0;
+    const provider = makeAkahuBankProvider(
+      {
+        appToken: "app",
+        baseUrl: "https://api.example.test",
+        userToken: "user",
+      },
+      () => {
+        calls += 1;
+        return Promise.resolve(
+          Response.json({
+            cursor: { next: "repeated" },
+            items: [],
+            success: true,
+          })
+        );
+      }
+    );
+
+    const error = await Effect.runPromise(
+      Effect.flip(provider.getTransactions({ start: null }))
+    );
+
+    expect(error._tag).toBe("InvalidProviderResponseError");
+    expect(calls).toBe(2);
   });
 });

@@ -19,7 +19,7 @@ const dbEffect = <A>(operation: string, run: () => Promise<A>) =>
     catch: (cause) => new DatabaseError({ cause, operation }),
     try: run,
   });
-const accountSelect = `SELECT id, institution, name, type, status, currency, current_balance AS currentBalance,
+const accountSelect = `SELECT id, provider_id AS providerId, institution, name, type, status, currency, current_balance AS currentBalance,
 available_balance AS availableBalance, formatted_account AS formattedAccount, holder_name AS holderName,
 provider_balance_refreshed_at AS providerBalanceRefreshedAt, provider_transactions_refreshed_at AS providerTransactionsRefreshedAt,
 data_updated_at AS dataUpdatedAt, synced_at AS syncedAt FROM accounts`;
@@ -29,16 +29,26 @@ other_account AS otherAccount, card_suffix AS cardSuffix, provider_updated_at AS
 data_updated_at AS dataUpdatedAt, synced_at AS syncedAt FROM transactions`;
 const CursorSchema = Schema.Struct({ date: Schema.String, id: Schema.String });
 const syncLeaseSeconds = 5 * 60;
+const requireLease = (owned: boolean) =>
+  owned ? Effect.void : Effect.fail(new SyncInProgressError({}));
 
 export const makeD1BankStore = (db: D1Database) =>
   BankStore.of({
-    acquireSync: (now) =>
+    acquireSync: (now, leaseId, providerRefreshAllowedBefore) =>
       dbEffect("acquireSync", () =>
         db
           .prepare(
-            "UPDATE sync_state SET status='syncing',started_at=?,last_attempt_at=?,error_code=NULL,error_message=NULL WHERE singleton=1 AND (status NOT IN ('syncing','refreshing') OR started_at IS NULL OR julianday(started_at) <= julianday(?) - ? / 86400.0)"
+            "UPDATE sync_state SET status='syncing',started_at=?,last_attempt_at=?,lease_id=?,error_code=NULL,error_message=NULL WHERE singleton=1 AND (status NOT IN ('syncing','refreshing') OR started_at IS NULL OR julianday(started_at) <= julianday(?) - ? / 86400.0) AND (? IS NULL OR last_provider_refresh_requested_at IS NULL OR julianday(last_provider_refresh_requested_at) <= julianday(?))"
           )
-          .bind(now, now, now, syncLeaseSeconds)
+          .bind(
+            now,
+            now,
+            leaseId,
+            now,
+            syncLeaseSeconds,
+            providerRefreshAllowedBefore,
+            providerRefreshAllowedBefore
+          )
           .run()
       ).pipe(
         Effect.flatMap((result) =>
@@ -47,15 +57,17 @@ export const makeD1BankStore = (db: D1Database) =>
             : Effect.fail(new SyncInProgressError({}))
         )
       ),
-    completeSync: (now, refreshedAt) =>
-      dbEffect("completeSync", async () => {
-        await db
+    completeSync: (now, refreshedAt, leaseId) =>
+      dbEffect("completeSync", () =>
+        db
           .prepare(
-            "UPDATE sync_state SET status='idle',started_at=NULL,last_success_at=?,provider_refreshed_at=?,error_code=NULL,error_message=NULL WHERE singleton=1"
+            "UPDATE sync_state SET status='idle',started_at=NULL,lease_id=NULL,last_success_at=?,provider_refreshed_at=?,error_code=NULL,error_message=NULL WHERE singleton=1 AND lease_id=?"
           )
-          .bind(now, refreshedAt)
-          .run();
-      }),
+          .bind(now, refreshedAt, leaseId)
+          .run()
+      ).pipe(
+        Effect.flatMap((result) => requireLease(result.meta.changes === 1))
+      ),
     consumeRateLimit: (bucket, now, limit) =>
       Effect.tryPromise({
         catch: (cause) =>
@@ -64,11 +76,15 @@ export const makeD1BankStore = (db: D1Database) =>
             : new DatabaseError({ cause, operation: "consumeRateLimit" }),
         try: async () => {
           const expires = now + 60;
-          await db
-            .prepare(`INSERT INTO rate_limits(bucket,count,expires_at) VALUES(?,1,?) ON CONFLICT(bucket) DO UPDATE SET
+          await db.batch([
+            db
+              .prepare("DELETE FROM rate_limits WHERE expires_at <= ?")
+              .bind(now),
+            db
+              .prepare(`INSERT INTO rate_limits(bucket,count,expires_at) VALUES(?,1,?) ON CONFLICT(bucket) DO UPDATE SET
       count=CASE WHEN expires_at<=? THEN 1 ELSE count+1 END, expires_at=CASE WHEN expires_at<=? THEN ? ELSE expires_at END`)
-            .bind(bucket, expires, now, now, expires)
-            .run();
+              .bind(bucket, expires, now, now, expires),
+          ]);
           const row = await db
             .prepare(
               "SELECT count,expires_at AS expiresAt FROM rate_limits WHERE bucket=?"
@@ -82,13 +98,13 @@ export const makeD1BankStore = (db: D1Database) =>
           }
         },
       }).pipe(Effect.asVoid),
-    failSync: (now, code) =>
+    failSync: (now, code, leaseId) =>
       dbEffect("failSync", async () => {
         await db
           .prepare(
-            "UPDATE sync_state SET status='failed',started_at=NULL,last_attempt_at=?,error_code=?,error_message='Synchronization failed' WHERE singleton=1"
+            "UPDATE sync_state SET status='failed',started_at=NULL,lease_id=NULL,last_attempt_at=?,error_code=?,error_message='Synchronization failed' WHERE singleton=1 AND lease_id=?"
           )
-          .bind(now, code)
+          .bind(now, code, leaseId)
           .run();
       }),
     getAccount: (id) =>
@@ -170,17 +186,20 @@ export const makeD1BankStore = (db: D1Database) =>
             : null;
         return { items, nextCursor };
       }),
-    markRefreshRequested: (now) =>
-      dbEffect("markRefreshRequested", async () => {
-        await db
+    markRefreshRequested: (now, leaseId) =>
+      dbEffect("markRefreshRequested", () =>
+        db
           .prepare(
-            "UPDATE sync_state SET status='refreshing',last_provider_refresh_requested_at=? WHERE singleton=1"
+            "UPDATE sync_state SET status='refreshing',last_provider_refresh_requested_at=? WHERE singleton=1 AND lease_id=?"
           )
-          .bind(now)
-          .run();
-      }),
+          .bind(now, leaseId)
+          .run()
+      ).pipe(
+        Effect.flatMap((result) => requireLease(result.meta.changes === 1))
+      ),
     saveSnapshot: ({
       accounts,
+      leaseId,
       posted,
       pending,
       reconcilePostedFrom,
@@ -191,7 +210,8 @@ export const makeD1BankStore = (db: D1Database) =>
         for (const a of accounts) {
           statements.push(
             db
-              .prepare(`INSERT INTO accounts VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
+              .prepare(`INSERT INTO accounts SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS
+      (SELECT 1 FROM sync_state WHERE singleton=1 AND lease_id=?) ON CONFLICT(id) DO UPDATE SET
       institution=excluded.institution,name=excluded.name,type=excluded.type,status=excluded.status,currency=excluded.currency,
       current_balance=excluded.current_balance,available_balance=excluded.available_balance,formatted_account=excluded.formatted_account,
       holder_name=excluded.holder_name,provider_balance_refreshed_at=excluded.provider_balance_refreshed_at,
@@ -211,18 +231,20 @@ export const makeD1BankStore = (db: D1Database) =>
                 a.providerBalanceRefreshedAt,
                 a.providerTransactionsRefreshedAt,
                 a.dataUpdatedAt,
-                syncedAt
+                syncedAt,
+                leaseId
               )
           );
         }
         statements.push(
           db
             .prepare(
-              "DELETE FROM transactions WHERE status = 'posted' AND transaction_at > ?"
+              "DELETE FROM transactions WHERE status = 'posted' AND transaction_at > ? AND EXISTS (SELECT 1 FROM sync_state WHERE singleton=1 AND lease_id=?)"
             )
-            .bind(reconcilePostedFrom)
+            .bind(reconcilePostedFrom, leaseId)
         );
-        const upsert = `INSERT INTO transactions VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
+        const upsert = `INSERT INTO transactions SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS
+      (SELECT 1 FROM sync_state WHERE singleton=1 AND lease_id=?) ON CONFLICT(id) DO UPDATE SET
       transaction_at=excluded.transaction_at,description=excluded.description,amount=excluded.amount,type=excluded.type,balance=excluded.balance,
       merchant_name=excluded.merchant_name,category_name=excluded.category_name,particulars=excluded.particulars,code=excluded.code,
       reference=excluded.reference,other_account=excluded.other_account,card_suffix=excluded.card_suffix,provider_updated_at=excluded.provider_updated_at,
@@ -252,12 +274,17 @@ export const makeD1BankStore = (db: D1Database) =>
                 t.providerCreatedAt,
                 t.providerUpdatedAt,
                 t.dataUpdatedAt,
-                syncedAt
+                syncedAt,
+                leaseId
               )
           );
         }
         statements.push(
-          db.prepare("DELETE FROM transactions WHERE status = 'pending'")
+          db
+            .prepare(
+              "DELETE FROM transactions WHERE status = 'pending' AND EXISTS (SELECT 1 FROM sync_state WHERE singleton=1 AND lease_id=?)"
+            )
+            .bind(leaseId)
         );
         for (const t of pending) {
           statements.push(
@@ -284,14 +311,19 @@ export const makeD1BankStore = (db: D1Database) =>
                 null,
                 t.providerUpdatedAt,
                 t.dataUpdatedAt,
-                syncedAt
+                syncedAt,
+                leaseId
               )
           );
         }
-        if (statements.length > 0) {
-          await db.batch(statements);
-        }
-      }),
+        const guard = db
+          .prepare(
+            "UPDATE sync_state SET lease_id=lease_id WHERE singleton=1 AND lease_id=?"
+          )
+          .bind(leaseId);
+        const results = await db.batch([guard, ...statements]);
+        return results[0]?.meta.changes === 1;
+      }).pipe(Effect.flatMap(requireLease)),
   });
 
 export const d1BankStoreLive = (db: D1Database) =>

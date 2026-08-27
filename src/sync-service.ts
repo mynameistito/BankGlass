@@ -1,4 +1,4 @@
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Result } from "effect";
 
 import { BankProvider } from "./bank-provider";
 import type { BankProviderError } from "./bank-provider";
@@ -48,8 +48,14 @@ export const makeSyncService = (
         readonly requestProviderRefresh: boolean;
       }) {
         const startedAt = new Date().toISOString();
-        yield* store.acquireSync(startedAt);
-        const run = Effect.gen(function* run() {
+        const providerRefreshAllowedBefore = options.requestProviderRefresh
+          ? new Date(Date.now() - cooldownSeconds * 1000).toISOString()
+          : null;
+        const leaseId = crypto.randomUUID();
+        const acquisition = yield* Effect.result(
+          store.acquireSync(startedAt, leaseId, providerRefreshAllowedBefore)
+        );
+        if (Result.isFailure(acquisition)) {
           if (options.requestProviderRefresh) {
             const status = yield* store.getSyncStatus;
             if (status.lastProviderRefreshRequestedAt !== null) {
@@ -64,8 +70,13 @@ export const makeSyncService = (
                 );
               }
             }
+          }
+          return yield* Effect.fail(acquisition.failure);
+        }
+        const run = Effect.gen(function* run() {
+          if (options.requestProviderRefresh) {
             yield* provider.requestRefresh;
-            yield* store.markRefreshRequested(startedAt);
+            yield* store.markRefreshRequested(startedAt, leaseId);
             yield* Effect.sleep("5 seconds");
           }
           const start = new Date(
@@ -82,6 +93,7 @@ export const makeSyncService = (
           const syncedAt = new Date().toISOString();
           yield* store.saveSnapshot({
             accounts,
+            leaseId,
             pending,
             posted,
             reconcilePostedFrom: start,
@@ -92,7 +104,7 @@ export const makeSyncService = (
             .filter(isPresent)
             .toSorted();
           const providerRefreshedAt = freshness.at(0) ?? null;
-          yield* store.completeSync(syncedAt, providerRefreshedAt);
+          yield* store.completeSync(syncedAt, providerRefreshedAt, leaseId);
           return {
             accounts: accounts.length,
             pendingTransactions: pending.length,
@@ -104,7 +116,7 @@ export const makeSyncService = (
         return yield* run.pipe(
           Effect.tapError((error) =>
             store
-              .failSync(new Date().toISOString(), error._tag)
+              .failSync(new Date().toISOString(), error._tag, leaseId)
               .pipe(Effect.ignore)
           )
         );

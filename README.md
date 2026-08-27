@@ -1,158 +1,214 @@
 # BankGlass
 
-A self-hosted, read-only banking API and MCP server for securely connecting applications and AI agents to personal financial data. BankGlass runs entirely on Cloudflare Workers, stores normalized account and transaction history in D1, and uses Effect for services, layers, schemas, typed errors, retries, timeouts, orchestration, logging, and tests.
+BankGlass is a self-hosted, read-only API and [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for the accounts connected to one [Akahu Personal App](https://developers.akahu.nz/docs/personal-apps).
 
-This is deliberately not a multi-user product. It has no signup, tenant, payment, or arbitrary upstream-proxy functionality.
+It periodically copies account, balance, and transaction data from Akahu into Cloudflare D1, then makes the cached data available to trusted applications and AI agents. It cannot make payments or modify bank accounts.
 
-## Provider decision
+> [!IMPORTANT] BankGlass is a personal, single-user service. It is not a multi-user banking product and is not affiliated with Akahu or any financial institution.
 
-Research was checked against primary sources on 26 August 2026. **Akahu Personal Apps** are the best fit: they are explicitly free for one user accessing their own data, support official BNZ open-banking connections, and expose accounts, balances, posted transactions, pending transactions where BNZ supplies them, and transaction enrichment.
+## What It Does
 
-| Option | Personal access | Cost | BNZ data | Freshness and events | Decision |
-| --- | --- | --- | --- | --- | --- |
-| Akahu Personal App | Explicitly limited to the owner's Akahu account | Free | Accounts, balances, posted and pending transaction endpoints | Cached; daily scheduled refresh; one-hour manual rest period; no webhooks | **Selected** |
-| Akahu full app | Intended for production apps and multiple users; Akahu accreditation required | Typically NZ$0.50-NZ$2.50/user/month, quote-based | Same normalized account and transaction APIs | Custom scheduled cadence; default 15-minute manual rest period; webhooks | Upgrade only if faster refresh/webhooks become worth paying for |
-| Direct BNZ CDR | Production API is for accredited requestors, not casual personal scripts | Bank calls cannot be charged, but MBIE accreditation starts at NZ$1,500 plus renewal, levy, certificates, insurance, and compliance | Official account information APIs include balances and transaction statuses | Direct request-time API; no public exact cache/rate SLA; v3 events cover consent status, not transaction changes | Disproportionate for one user |
-| Blink Data Services | Business production onboarding | NZ$99/month minimum plus data charges and term | BNZ accounts, balances, transactions | Marketed as real-time; public pending/cache/transaction-webhook details are incomplete | Too expensive |
-| Fiskil | Commercial fintech/business service; no personal tier documented | Quote only | BNZ accounts, balances, transactions | Marketed as real-time; detailed public pending/cache limits unavailable | No personal advantage over Akahu |
-| PocketSmith/Xero feeds | Consumer/accounting product, not a raw personal bank API | Product subscription | BNZ feeds | Roughly 12-24 hours in PocketSmith/Xero | Wrong interface |
+- Reads every account connected to the configured Akahu Personal App, across the institutions Akahu supports.
+- Stores normalized accounts, balances, posted transactions, and pending transactions in Cloudflare D1.
+- Exposes a REST API protected by Cloudflare Access and a separate bearer token.
+- Exposes four read-only MCP tools protected by Cloudflare Access.
+- Refreshes automatically once a day and supports a rate-limited manual refresh.
+- Keeps reads fast and private by serving them from D1 instead of calling Akahu on every request.
 
-Important primary sources:
-
-- [Akahu Personal Apps](https://developers.akahu.nz/docs/personal-apps): free, one user, daily scheduled refresh, one-hour manual rest period, no webhooks.
-- [Akahu pricing](https://www.akahu.nz/pricing): own-data Personal App access is free; full ongoing connectivity is typically NZ$0.50-NZ$2.50/user/month.
-- [Akahu supported integrations](https://developers.akahu.nz/docs/integrations): BNZ account and transaction data are supported.
-- [Akahu official-open-banking FAQ](https://developers.akahu.nz/docs/official-open-banking-faqs): Personal Apps can use official connections.
-- [Akahu data refreshes](https://developers.akahu.nz/docs/data-refreshes): reads return cached data; refreshes are asynchronous and may be ignored inside the rest period.
-- [Akahu transaction guide](https://developers.akahu.nz/docs/accessing-transactional-data): posted and pending use separate endpoints; Personal Apps receive 365 days of initial history; pending rows have no stable upstream ID.
-- [BNZ open banking](https://www.bnz.co.nz/open-banking): only trusted, due-diligenced third parties receive API access.
-- [BNZ developer portal](https://developer.bnz.co.nz/default): production open-banking APIs are for accredited requestors; proprietary direct access is aimed at BNZ Business customers.
-- [MBIE CDR accreditation](https://www.mbie.govt.nz/business-and-employment/business/consumer-data-right/participating-as-a-data-holder-or-accredited-requestor/accredited-requestors) and [fees](https://www.mbie.govt.nz/business-and-employment/business/consumer-data-right/participating-as-a-data-holder-or-accredited-requestor/fees-and-levies-for-consumer-data-right).
-- [Payments NZ Account Information standard](https://paymentsnz.atlassian.net/wiki/spaces/PaymentsNZAPIStandards/pages/1909358829/Account+Information+API+Specification+v2.2.3) and [Event Notification standard](https://www.apicentre.paymentsnz.co.nz/standards/available-standards/event-notification-api-standard).
-
-No legitimate free individual option provides guaranteed near-real-time BNZ data or transaction webhooks. Polling this API every minute does not make the underlying data newer.
+BankGlass deliberately has no signup flow, tenants, payment scopes, payment endpoints, or arbitrary upstream proxy.
 
 ## Architecture
 
 ```text
-NZ official Open Banking / CDR
+Connected financial institutions
               |
               v
-   Akahu Personal App cache
+     Akahu Personal App
               |
               v
-Cloudflare Worker + Effect + Alchemy
-  |-- Access-protected HTTP API
-  |-- read-only MCP endpoint
-  |-- AkahuBankProvider Layer
-  |-- SyncService Layer
-  |-- D1BankStore Layer
-  |-- daily Cron Trigger
-  `-- Worker secrets
-              |
-              v
-             D1
+  Cloudflare Worker + Effect
+      |              |
+      v              v
+  REST API        MCP server
+      \              /
+       v            v
+        Cloudflare D1
 ```
 
-No Durable Object is used. D1's conditional `sync_state` update is enough to serialize a single user's syncs. No KV is used because no eventually consistent cache is needed. Reads use D1 and do not call Akahu.
+[Alchemy](https://alchemy.run/) provisions the Worker, D1 database, migrations, custom domain, scheduled job, and observability. [Effect](https://effect.website/) provides the service architecture, schemas, retries, timeouts, typed errors, and orchestration.
 
-`BankProvider` owns the normalized provider contract. `AkahuBankProvider` decodes Akahu JSON with Effect Schema and converts it at the boundary. Provider types never enter D1 or API contracts. `BankStore` owns persistence. `SyncService` owns refresh cooldown, retrieval order, reconciliation, and status transitions.
+## Requirements
 
-## Freshness semantics
+- [Bun 1.4.0](https://bun.sh/)
+- A Cloudflare account with a domain managed by Cloudflare
+- A Cloudflare Access team
+- An [Akahu Personal App](https://developers.akahu.nz/docs/personal-apps) with read-only account and transaction permissions
 
-These timestamps are intentionally different:
+Akahu Personal Apps are intended for one person accessing their own data. Akahu controls institution support, data freshness, and refresh limits; see the [Personal Apps](https://developers.akahu.nz/docs/personal-apps), [supported integrations](https://developers.akahu.nz/docs/integrations), and [data refreshes](https://developers.akahu.nz/docs/data-refreshes) documentation.
 
-- `dataUpdatedAt`: when this application last observed and normalized this specific record. It does not mean BNZ changed at that instant.
-- `providerRefreshedAt`: Akahu's account `refreshed` timestamp, meaning Akahu's view was retrieved/processed from the data holder as of that instant. Global status uses the oldest available balance/transaction refresh across accounts, providing a conservative whole-dataset timestamp.
-- `syncedAt`: when the normalized snapshot was committed to D1.
-- `lastProviderRefreshRequestedAt`: when this Worker asked Akahu to refresh. It is never presented as proof that BNZ data changed or was fetched.
-- `lastSuccessAt`: when the complete provider-to-D1 synchronization succeeded.
+## Set Up Akahu
 
-`POST /v1/refresh` asks Akahu to refresh, waits briefly for asynchronous processing, then synchronizes the currently available Akahu cache. The response and `/v1/status` expose actual provider timestamps, which can remain unchanged. Personal App requests are rejected locally for one hour after the previous request. A daily Cron at 03:17 UTC performs the same process.
+1. Create an Akahu profile at [my.akahu.nz](https://my.akahu.nz), enable MFA, and create a Personal App.
+2. Connect the financial institutions and accounts you want BankGlass to read.
+3. Grant only the account and transaction read permissions BankGlass needs.
+4. Copy the App ID Token and User Access Token from Akahu's developer page.
 
-Posted rows use stable Akahu transaction IDs and are upserted. Each sync reconciles the configurable recent lookback window so upstream edits/deletions are reflected while older local history remains retained. Pending rows have no Akahu ID, so a deterministic local fingerprint is generated and the complete pending set is replaced every sync. A settled row is inserted while its old pending representation disappears.
+Bank authentication and consent happen between you, Akahu, and the institution. BankGlass never receives online-banking credentials.
 
-## Access wall and agent access
+## Configure Cloudflare Access
 
-The custom hostname must be covered by one Cloudflare Access self-hosted application. Access is the outer authorization boundary for every route, and the Worker independently verifies the signed `Cf-Access-Jwt-Assertion` against the configured team-domain JWKS, issuer, and application audience before reading D1.
+Create a Cloudflare Access self-hosted application for the hostname where BankGlass will run. Every route must pass through this Access application.
 
-Create two Access policies on that application:
+Recommended policies:
 
-- An `Allow` policy restricted to the owner's exact IdP email for browser and interactive agent access.
-- A `Service Auth` policy restricted to a dedicated Access service token for unattended agents.
+- An `Allow` policy for your exact identity-provider email, used by browsers and interactive MCP clients.
+- A `Service Auth` policy for a dedicated Access service token, used by unattended clients.
 
-Enable **Managed OAuth** on the application for interactive MCP clients. Use a 5-15 minute access-token lifetime and a grant session appropriate for the device. Enable only the localhost, loopback, or exact HTTPS redirect URIs required by the chosen clients. Access service tokens are the machine credential for autonomous agents; send their generated `CF-Access-Client-Id` and `CF-Access-Client-Secret` headers. Never put the service-token secret in Wrangler because Access consumes it before the request reaches the Worker.
+Enable Managed OAuth if interactive MCP clients will connect to the server. Allow only the redirect URIs those clients require.
 
-Disable the public `workers.dev` route after the custom hostname and Access application work. Otherwise that hostname could bypass the Access wall, although the Worker's JWT validation still fails closed.
+BankGlass also verifies the Access JWT inside the Worker, including its signature, issuer, and application audience. Once the custom hostname works, keep the production `workers.dev` route disabled so requests cannot bypass the Access application.
 
-## API
+## Local Development
 
-All routes first require Cloudflare Access. REST routes additionally require `Authorization: Bearer <API_BEARER_TOKEN>` as defense in depth.
+Install dependencies and create a local configuration file:
+
+```powershell
+bun install
+Copy-Item .dev.vars.example .dev.vars
+```
+
+Fill in `.dev.vars`:
+
+```dotenv
+AKAHU_APP_TOKEN=replace-me
+AKAHU_USER_TOKEN=replace-me
+API_BEARER_TOKEN=replace-with-a-random-32-byte-token
+ACCESS_APP_HOSTNAME=bank.example.com
+ACCESS_POLICY_AUD=replace-with-access-application-aud
+ACCESS_TEAM_DOMAIN=https://your-team.cloudflareaccess.com
+AKAHU_API_BASE_URL=https://api.akahu.io/v1
+REFRESH_COOLDOWN_SECONDS=3600
+SYNC_LOOKBACK_DAYS=14
+API_RATE_LIMIT_PER_MINUTE=60
+```
+
+Generate the REST bearer token in PowerShell:
+
+```powershell
+[Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).ToLowerInvariant()
+```
+
+Start the local Worker:
+
+```powershell
+bun run dev
+```
+
+Alchemy receives `.dev.vars` through the `dev` script. The Worker intentionally has no local authentication bypass, so use the test suite for local boundary testing and an Access-protected deployment for end-to-end requests.
+
+`.dev.vars`, `.env`, local D1 data, Alchemy state, and Wrangler state are ignored by Git. Never commit real credentials.
+
+## Deploy
+
+BankGlass includes an Alchemy deployment and a GitHub Actions workflow. Before deploying a fork, replace the repository owner's production hostname in `alchemy.run.ts` and `.github/workflows/deploy.yml` with your own Access-protected hostname.
+
+Set these secrets in your environment or GitHub repository:
+
+| Secret                  | Purpose                                      |
+| ----------------------- | -------------------------------------------- |
+| `AKAHU_APP_TOKEN`       | Akahu Personal App ID token                  |
+| `AKAHU_USER_TOKEN`      | Akahu user access token                      |
+| `API_BEARER_TOKEN`      | Additional authentication for `/v1/*` routes |
+| `ACCESS_POLICY_AUD`     | Audience tag of the Access application       |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account used for deployment       |
+| `CLOUDFLARE_API_TOKEN`  | Cloudflare deployment credential             |
+
+Set these non-secret values:
+
+| Variable | Example | Default |
+| --- | --- | --- |
+| `ACCESS_APP_HOSTNAME` | `bank.example.com` | Required |
+| `ACCESS_TEAM_DOMAIN` | `https://example.cloudflareaccess.com` | Required |
+| `AKAHU_API_BASE_URL` | `https://api.akahu.io/v1` | Shown value |
+| `API_RATE_LIMIT_PER_MINUTE` | `60` | `60` |
+| `REFRESH_COOLDOWN_SECONDS` | `3600` | `3600` |
+| `SYNC_LOOKBACK_DAYS` | `14` | `14` |
+| `CLOUDFLARE_WORKERS_SUBDOMAIN` | Your Workers subdomain | Required for PR previews |
+
+For a local production deployment, load the values into the environment and run:
+
+```powershell
+$env:STAGE = "prod"
+bun run deploy
+```
+
+The included deployment workflow deploys `main` after CI succeeds and creates previews for same-repository pull requests. After the first deployment:
+
+1. Confirm the custom hostname is covered by Cloudflare Access.
+2. Test interactive and service-token authentication.
+3. Call `POST /v1/refresh` once to seed D1.
+4. Confirm `GET /v1/status` reports a successful sync.
+
+## REST API
+
+Every REST request needs both a valid Cloudflare Access identity and `Authorization: Bearer <API_BEARER_TOKEN>`.
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/v1/accounts` | All locally stored accounts |
-| `GET` | `/v1/accounts/:accountId` | One account |
-| `GET` | `/v1/accounts/:accountId/balance` | Current/available balance and freshness |
-| `GET` | `/v1/accounts/:accountId/transactions` | Posted transactions |
-| `GET` | `/v1/accounts/:accountId/pending` | Pending transactions |
-| `GET` | `/v1/transactions` | Posted transactions across accounts |
-| `POST` | `/v1/refresh` | Request upstream refresh and synchronize |
-| `GET` | `/v1/status` | Refresh/sync status and timestamps |
+| `GET` | `/v1/accounts` | List cached accounts and balances |
+| `GET` | `/v1/accounts/:accountId` | Get one account |
+| `GET` | `/v1/accounts/:accountId/balance` | Get one balance and its freshness timestamps |
+| `GET` | `/v1/accounts/:accountId/transactions` | List posted transactions for one account |
+| `GET` | `/v1/accounts/:accountId/pending` | List pending transactions for one account |
+| `GET` | `/v1/transactions` | List posted transactions across all accounts |
+| `GET` | `/v1/status` | Get refresh and synchronization status |
+| `POST` | `/v1/refresh` | Ask Akahu to refresh, then synchronize its current cache |
 
-Transaction routes accept `from`, `to`, `limit` (1-200, default 50), and opaque `cursor`. Dates are ISO 8601. Results sort newest first with stable keyset pagination.
+Transaction routes accept `from`, `to`, `limit`, and `cursor`. Dates must be ISO 8601 date-times. `limit` defaults to 50 and may be 1-200. Results use newest-first keyset pagination.
 
-```text
-curl "https://domain.tld/v1/accounts" --header "Authorization: Bearer <API_BEARER_TOKEN>" --header "CF-Access-Client-Id: <CF_ACCESS_CLIENT_ID>" --header "CF-Access-Client-Secret: <CF_ACCESS_CLIENT_SECRET>"
-curl "https://domain.tld/v1/transactions?from=2026-08-01T00:00:00Z&limit=50" --header "Authorization: Bearer <API_BEARER_TOKEN>" --header "CF-Access-Client-Id: <CF_ACCESS_CLIENT_ID>" --header "CF-Access-Client-Secret: <CF_ACCESS_CLIENT_SECRET>"
-curl --request POST "https://domain.tld/v1/refresh" --header "Authorization: Bearer <API_BEARER_TOKEN>" --header "CF-Access-Client-Id: <CF_ACCESS_CLIENT_ID>" --header "CF-Access-Client-Secret: <CF_ACCESS_CLIENT_SECRET>"
+Example for an unattended client:
+
+```sh
+curl "https://bank.example.com/v1/accounts" \
+  --header "Authorization: Bearer <API_BEARER_TOKEN>" \
+  --header "CF-Access-Client-Id: <CF_ACCESS_CLIENT_ID>" \
+  --header "CF-Access-Client-Secret: <CF_ACCESS_CLIENT_SECRET>"
 ```
 
-Replace the placeholders with values from your secret manager or environment. In PowerShell, use `curl.exe` if `curl` resolves to the legacy `Invoke-WebRequest` alias. An unattended REST client supplies all three headers: the REST bearer plus `CF-Access-Client-Id` and `CF-Access-Client-Secret`.
+An importable request collection is available at `insomnia/BankGlass.insomnia.json`.
 
-## MCP
+## MCP Server
 
-The stateless Streamable HTTP endpoint is `https://domain.tld/mcp`. It deliberately does not use the REST bearer because Managed OAuth owns `Authorization`; Cloudflare Access authentication remains mandatory. It exposes four read-only tools:
+The stateless Streamable HTTP endpoint is `https://bank.example.com/mcp`. It provides four read-only tools:
 
 | Tool | Description |
 | --- | --- |
-| `list_accounts` | Cached accounts and balances |
-| `get_balance` | One balance and freshness timestamps |
-| `list_transactions` | Posted or pending transactions with filters and cursor pagination |
-| `get_sync_status` | Sync state and provider freshness |
+| `list_accounts` | List cached accounts and balances |
+| `get_balance` | Get one balance and its freshness timestamps |
+| `list_transactions` | List posted or pending transactions with filters and cursor pagination |
+| `get_sync_status` | Get synchronization state and Akahu freshness |
 
-Tool inputs:
+There is no refresh or payment tool, so an MCP client cannot trigger upstream activity or mutate financial data.
 
-| Tool | Inputs |
-| --- | --- |
-| `list_accounts` | None |
-| `get_balance` | Required `accountId` |
-| `list_transactions` | Optional `accountId`, `cursor`, `from`, `to`; `status` is `posted` or `pending` and defaults to `posted`; `limit` is 1-200 and defaults to 50 |
-| `get_sync_status` | None |
-
-There is no MCP refresh or payment tool. An agent cannot cause upstream provider activity or mutate banking data.
-
-### Connect An MCP Client
-
-Interactive MCP clients that support remote OAuth can use this server definition. The client will open the Cloudflare Access login flow:
+Interactive clients that support remote OAuth can use:
 
 ```json
 {
   "mcpServers": {
     "bankglass": {
-      "url": "https://domain.tld/mcp"
+      "url": "https://bank.example.com/mcp"
     }
   }
 }
 ```
 
-For an unattended client that supports custom transport headers, configure a Cloudflare Access service token. The MCP endpoint does not use `API_BEARER_TOKEN`:
+For an unattended client that supports custom transport headers, use a Cloudflare Access service token:
 
 ```json
 {
   "mcpServers": {
     "bankglass": {
-      "url": "https://domain.tld/mcp",
+      "url": "https://bank.example.com/mcp",
       "headers": {
         "CF-Access-Client-Id": "${CF_ACCESS_CLIENT_ID}",
         "CF-Access-Client-Secret": "${CF_ACCESS_CLIENT_SECRET}"
@@ -162,134 +218,42 @@ For an unattended client that supports custom transport headers, configure a Clo
 }
 ```
 
-Set `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET` in the MCP client's private environment or secret manager. Do not add the REST `Authorization` header to this configuration: MCP Managed OAuth owns that header, and the REST bearer is only accepted by `/v1/*` routes.
+Do not send `API_BEARER_TOKEN` to `/mcp`. Managed OAuth uses the `Authorization` header, while the extra REST bearer applies only to `/v1/*`.
 
-Errors are stable envelopes such as:
+## Data Freshness
 
-```json
-{
-  "error": {
-    "code": "REFRESH_COOLDOWN",
-    "message": "Request could not be completed"
-  },
-  "retryAt": "2026-08-26T04:17:00.000Z"
-}
-```
+Akahu reads are cached, and refresh requests are asynchronous. A successful BankGlass sync means the current Akahu cache was stored in D1; it does not guarantee that an institution supplied newer data.
 
-## Akahu setup
+- `dataUpdatedAt`: when BankGlass normalized the record.
+- `providerRefreshedAt`: Akahu's reported account-data freshness.
+- `syncedAt`: when BankGlass committed the snapshot to D1.
+- `lastProviderRefreshRequestedAt`: when BankGlass asked Akahu to refresh.
+- `lastSuccessAt`: when the complete Akahu-to-D1 sync last succeeded.
 
-1. Create an Akahu profile at [my.akahu.nz](https://my.akahu.nz), complete identity verification and MFA, and create a Personal App.
-2. Connect BNZ using the official open-banking connection. Authentication and account consent occur with BNZ; this project never receives or stores BNZ credentials.
-3. On Akahu's Developers page, obtain the App ID Token and User Access Token.
-4. Limit the Personal App's permissions to read-only account and transaction access. Personal Apps cannot initiate payments.
-5. Rotate either token immediately if it may have been exposed.
+The default schedule runs daily at 03:17 UTC. Manual refreshes have a one-hour cooldown to match the Akahu Personal App refresh policy. Posted transactions are reconciled across the latest 14 days by default, with a safety limit of 750 transactions or 100 provider pages per sync. Pending transactions are replaced on each sync because Akahu does not provide stable IDs for them.
 
-Cloudflare Workers do not have a fixed outbound IP, so Akahu Personal App IP allow-listing is not generally usable without extra network infrastructure. This project intentionally does not add that infrastructure.
+## Security Model
 
-## Local development
+- Cloudflare Access protects every route, and the Worker independently validates Access JWTs.
+- REST routes require a second bearer token.
+- MCP tools and Akahu permissions are read-only; there are no payment operations.
+- Akahu and API credentials are Worker secrets, not D1 records.
+- REST data responses are not cached and include restrictive security headers.
+- Input limits, D1-backed rate limiting, sync locking, and idempotent reconciliation reduce abuse and consistency risks.
+- Logs contain operation and error tags, not provider responses, account data, transactions, or credentials.
 
-Requirements: [Bun](https://bun.sh/) and a Cloudflare account. A local D1 database is enough for tests and development; no BNZ or Akahu account is required to run the test suite.
+This does not protect against compromise of your Cloudflare account, Akahu account, client device, or secret manager. Enable MFA, restrict account membership, and rotate credentials after suspected exposure.
 
-```powershell
-bun install
-Copy-Item .dev.vars.example .dev.vars
-bun run dev
-```
-
-Alchemy does not automatically read Wrangler's `.dev.vars`; the `dev` script passes that file explicitly. To invoke Alchemy directly, use `bun alchemy dev --env-file .dev.vars`.
-
-The Worker intentionally fails closed without a valid Access assertion. Use the automated tests for local boundary testing; use the Access-protected custom hostname for interactive end-to-end calls. Do not add a local authentication bypass.
-
-Create `.dev.vars` locally with the following values. These are local development secrets and must not be committed:
-
-```dotenv
-AKAHU_APP_TOKEN=replace-me
-AKAHU_USER_TOKEN=replace-me
-API_BEARER_TOKEN=replace-with-at-least-32-random-bytes
-ACCESS_APP_HOSTNAME=domain.tld
-ACCESS_POLICY_AUD=replace-with-access-application-aud
-ACCESS_TEAM_DOMAIN=https://your-team.cloudflareaccess.com
-AKAHU_API_BASE_URL=https://api.akahu.io/v1
-REFRESH_COOLDOWN_SECONDS=3600
-SYNC_LOOKBACK_DAYS=14
-API_RATE_LIMIT_PER_MINUTE=60
-```
-
-`.dev.vars` and `.env` are ignored by Git. Do not use real credentials in tests; tests use deterministic providers and Miniflare bindings.
-
-Generate a bearer token with OpenSSL instead of storing a literal token in shell history:
-
-```sh
-openssl rand -hex 32
-```
-
-## Cloudflare deployment
-
-1. Add `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `AKAHU_APP_TOKEN`, `AKAHU_USER_TOKEN`, and `API_BEARER_TOKEN` as deployment secrets. Add `ACCESS_POLICY_AUD` as a secret and `ACCESS_TEAM_DOMAIN`, `AKAHU_API_BASE_URL`, `API_RATE_LIMIT_PER_MINUTE`, `REFRESH_COOLDOWN_SECONDS`, `SYNC_LOOKBACK_DAYS`, `ACCESS_APP_HOSTNAME`, and `CLOUDFLARE_WORKERS_SUBDOMAIN` as repository variables.
-2. Create a Cloudflare Access self-hosted application covering `bank.honetito.com`. Add the owner-email `Allow` policy and agent `Service Auth` policy, and enable Managed OAuth.
-3. Deploy locally with `bun run deploy`, or merge to `main` and let `.github/workflows/deploy.yml` run the pinned `mynameistito/alchemy-deploy` action.
-
-Alchemy owns the Worker, D1 database, migration application, custom domain, cron, observability, stage naming, and environment bindings from `alchemy.run.ts`. It adopts the existing production D1 database by its `bankglass` name and migrates the existing Wrangler history to Alchemy's migration bookkeeping on first deploy.
-
-For local deployment, configure the values in `.env` or the shell before running Alchemy:
-
-```powershell
-AKAHU_APP_TOKEN=...
-AKAHU_USER_TOKEN=...
-API_BEARER_TOKEN=...
-ACCESS_POLICY_AUD=...
-ACCESS_APP_HOSTNAME=...
-ACCESS_TEAM_DOMAIN=https://your-team.cloudflareaccess.com
-AKAHU_API_BASE_URL=https://api.akahu.io/v1
-REFRESH_COOLDOWN_SECONDS=3600
-SYNC_LOOKBACK_DAYS=14
-API_RATE_LIMIT_PER_MINUTE=60
-```
-
-Set `STAGE` explicitly as well, for example `$env:STAGE = "dev"` in PowerShell. Production requires `STAGE=prod`.
-
-`ACCESS_POLICY_AUD` is the **Application audience (AUD) tag** from the Cloudflare Access self-hosted application. Do not put Akahu tokens, the API bearer, or the Access AUD in source control or command-line arguments.
-
-4. Run verification: `bun run typecheck`, `bun run test`, and `bun run check`.
-5. Validate browser, Managed OAuth, and service-token access, then call `POST /v1/refresh` once to seed D1.
-
-Non-secret settings and deployment resources are in `alchemy.run.ts`: one-hour cooldown, 14-day reconciliation window, 60 authenticated requests/minute, and daily Cron. Configure the `CLOUDFLARE_WORKERS_SUBDOMAIN` repository variable with the account's Workers subdomain so preview deployments can allow their `workers.dev` hostname.
-
-## Security and threat model
-
-Protected assets are API data, D1 history, the API bearer token, and Akahu tokens. Expected attackers include internet scanners, a leaked API client token, a compromised source repository, and accidental sensitive logging. Cloudflare account compromise and compromise of the owner's endpoint device remain privileged threats outside application-only controls.
-
-Controls:
-
-- Every endpoint, including status, authenticates before reading D1.
-- Every request requires a valid Cloudflare Access JWT with the expected signature, issuer, and application audience. Access signing keys are retrieved from the rotating team JWKS.
-- REST retains an independent bearer; MCP is read-only and omits it to remain compatible with Managed OAuth.
-- Bearer values are SHA-256 hashed and compared across every byte without early exit.
-- API and provider credentials exist only as Worker secrets/bindings.
-- Provider errors are classified without logging response bodies, tokens, account details, or transactions.
-- Query values are strictly bounded; there is no arbitrary SQL, URL, or upstream proxy input.
-- A D1 fixed-window limiter bounds authenticated traffic to 60 requests/minute.
-- REST responses use `no-store`, HSTS, CSP, frame denial, MIME sniffing prevention, and referrer suppression. MCP responses use `no-store` and MIME sniffing prevention while preserving protocol transport headers.
-- The provider implementation is read-only. No payment scope or payment route exists.
-- D1 stores useful normalized account, balance, and transaction fields, not BNZ credentials, Akahu tokens, party addresses, raw provider responses, or full card numbers.
-- Sync locking prevents concurrent refresh work; unique constraints and reconciliation make retries idempotent.
-- Cloudflare observability is enabled, but logs contain operation/error tags only.
-
-Use a random API token of at least 32 bytes, keep Cloudflare MFA enabled, restrict Cloudflare account membership, and rotate API, Akahu, and Access service-token credentials after suspected exposure.
-
-## Tests and quality
+## Development
 
 ```powershell
 bun run typecheck
 bun run test
-bun run lint
-bun run format
+bun run check
 ```
 
-Vitest runs inside workerd with a real local D1 binding. Coverage includes Access JWT signature/issuer/audience validation, MCP initialization, provider decoding/normalization, invalid responses, provider rate limits and retries, constant-work bearer authentication, D1 idempotency, duplicate handling, pending-to-settled replacement, keyset pagination, API rate limits/errors/security headers, cooldown policy, and the Cloudflare HTTP/D1 boundary. No test needs a BNZ or Akahu account.
+Tests run in workerd against a local D1 binding and do not require an Akahu account. They cover Access JWT validation, REST and MCP boundaries, provider decoding and retry behavior, synchronization, persistence, pagination, rate limits, cooldowns, and security headers.
 
-Ultracite uses Oxlint and Oxfmt. One documented lint exception disables an async/await preference that is structurally incompatible with Effect's typed callback combinators; all safety and correctness rules remain enabled.
+## License
 
-## Adding another provider
-
-Implement the domain-shaped `BankProviderService` in `src/bank-provider.ts`, decode the provider protocol with Effect Schema in a new adapter, normalize to `BankAccount`, `PostedTransaction`, and `PendingTransaction`, and provide its Layer in `src/index.ts`. D1, synchronization, HTTP routes, authentication, and tests do not need provider-specific changes. The implementation must preserve provider freshness timestamps and explicitly document pending-ID and refresh semantics.
+[MIT](LICENSE)
