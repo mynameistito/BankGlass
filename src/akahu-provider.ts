@@ -93,6 +93,8 @@ const PendingResponse = Schema.Struct({
 const RefreshResponse = Schema.Struct({ success: Schema.Literal(true) });
 const ProviderPayloadSchema = Schema.Struct({});
 type ProviderPayload = typeof ProviderPayloadSchema.Type;
+const maxTransactionPages = 100;
+const maxPostedTransactions = 750;
 
 export interface AkahuConfig {
   readonly baseUrl: string;
@@ -210,10 +212,10 @@ export const makeAkahuBankProvider = (
     operation: string,
     path: string,
     init?: RequestInit
-  ): Effect.Effect<ProviderPayload, BankProviderError> =>
-    Effect.tryPromise({
+  ): Effect.Effect<ProviderPayload, BankProviderError> => {
+    const requestEffect = Effect.tryPromise({
       catch: (cause) => new ProviderUnavailableError({ cause, operation }),
-      try: () =>
+      try: (signal) =>
         fetchImplementation(`${config.baseUrl}${path}`, {
           ...init,
           headers: {
@@ -221,6 +223,7 @@ export const makeAkahuBankProvider = (
             Authorization: `Bearer ${config.userToken}`,
             "X-Akahu-Id": config.appToken,
           },
+          signal,
         }),
     }).pipe(
       Effect.timeoutOrElse({
@@ -230,14 +233,19 @@ export const makeAkahuBankProvider = (
             new ProviderUnavailableError({ cause: "timeout", operation })
           ),
       }),
-      Effect.flatMap((response) => parseResponse(operation, response)),
-      Effect.retry({
-        schedule: Schedule.exponential("100 millis").pipe(
-          Schedule.upTo({ times: 2 })
-        ),
-        while: (error) => error._tag === "ProviderUnavailableError",
-      })
+      Effect.flatMap((response) => parseResponse(operation, response))
     );
+    return init?.method === "POST"
+      ? requestEffect
+      : requestEffect.pipe(
+          Effect.retry({
+            schedule: Schedule.exponential("100 millis").pipe(
+              Schedule.upTo({ times: 2 })
+            ),
+            while: (error) => error._tag === "ProviderUnavailableError",
+          })
+        );
+  };
 
   const getAccounts = Effect.gen(function* getAccounts() {
     const now = new Date().toISOString();
@@ -249,8 +257,19 @@ export const makeAkahuBankProvider = (
   const getTransactions = ({ start }: { readonly start: string | null }) =>
     Effect.gen(function* listTransactions() {
       const items: PostedTransaction[] = [];
+      const seenCursors = new Set<string>();
       let cursor: string | null = null;
+      let page = 0;
       do {
+        page += 1;
+        if (page > maxTransactionPages) {
+          return yield* Effect.fail(
+            new InvalidProviderResponseError({
+              details: `Pagination exceeded ${maxTransactionPages} pages`,
+              operation: "getTransactions",
+            })
+          );
+        }
         const query = new URLSearchParams();
         if (start !== null) {
           query.set("start", start);
@@ -267,6 +286,14 @@ export const makeAkahuBankProvider = (
           )
         );
         const now = new Date().toISOString();
+        if (items.length + response.items.length > maxPostedTransactions) {
+          return yield* Effect.fail(
+            new InvalidProviderResponseError({
+              details: `Response exceeded ${maxPostedTransactions} transactions`,
+              operation: "getTransactions",
+            })
+          );
+        }
         items.push(
           ...response.items.map((item): PostedTransaction => ({
             accountId: `account_${item._account}`,
@@ -292,7 +319,19 @@ export const makeAkahuBankProvider = (
             type: item.type,
           }))
         );
-        cursor = response.cursor?.next ?? null;
+        const nextCursor = response.cursor?.next ?? null;
+        if (nextCursor !== null && seenCursors.has(nextCursor)) {
+          return yield* Effect.fail(
+            new InvalidProviderResponseError({
+              details: "Provider returned a repeated pagination cursor",
+              operation: "getTransactions",
+            })
+          );
+        }
+        if (nextCursor !== null) {
+          seenCursors.add(nextCursor);
+        }
+        cursor = nextCursor;
       } while (cursor !== null);
       return items;
     });

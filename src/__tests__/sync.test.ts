@@ -7,6 +7,8 @@ import { makeSyncService } from "../sync-service";
 
 describe("synchronization policy", () => {
   it("rejects a refresh inside the Personal App one-hour cooldown", async () => {
+    let acquireCalls = 0;
+    let failCalls = 0;
     let refreshCalls = 0;
     const provider = BankProvider.of({
       getAccounts: Effect.succeed([]),
@@ -17,10 +19,16 @@ describe("synchronization policy", () => {
       }),
     });
     const store = BankStore.of({
-      acquireSync: () => Effect.void,
+      acquireSync: () =>
+        Effect.sync(() => {
+          acquireCalls += 1;
+        }),
       completeSync: () => Effect.void,
       consumeRateLimit: () => Effect.void,
-      failSync: () => Effect.void,
+      failSync: () =>
+        Effect.sync(() => {
+          failCalls += 1;
+        }),
       getAccount: () => Effect.die("unused"),
       getSyncStatus: Effect.succeed({
         errorCode: null,
@@ -48,6 +56,8 @@ describe("synchronization policy", () => {
       Effect.flip(service.synchronize({ requestProviderRefresh: true }))
     );
     expect(error._tag).toBe("RefreshCooldownError");
+    expect(acquireCalls).toBe(0);
+    expect(failCalls).toBe(0);
     expect(refreshCalls).toBe(0);
   });
 });
