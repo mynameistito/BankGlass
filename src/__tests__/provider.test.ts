@@ -108,6 +108,43 @@ describe("Akahu provider boundary", () => {
     expect(calls).toBe(1);
   });
 
+  it("aborts a refresh when its response body times out", async () => {
+    let aborted = false;
+    const provider = makeAkahuBankProvider(
+      {
+        appToken: "app",
+        baseUrl: "https://api.example.test",
+        requestTimeoutMs: 5,
+        userToken: "user",
+      },
+      (_input, init) =>
+        Promise.resolve(
+          new Response(
+            new ReadableStream({
+              start: (controller) => {
+                init?.signal?.addEventListener(
+                  "abort",
+                  () => {
+                    aborted = true;
+                    controller.error(new DOMException("Aborted", "AbortError"));
+                  },
+                  { once: true }
+                );
+              },
+            })
+          )
+        )
+    );
+
+    const error = await Effect.runPromise(Effect.flip(provider.requestRefresh));
+
+    expect(error).toMatchObject({
+      _tag: "ProviderUnavailableError",
+      cause: "timeout",
+    });
+    expect(aborted).toBeTruthy();
+  });
+
   it("rejects repeated transaction cursors", async () => {
     let calls = 0;
     const provider = makeAkahuBankProvider(

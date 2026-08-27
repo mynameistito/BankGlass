@@ -100,6 +100,7 @@ export interface AkahuConfig {
   readonly baseUrl: string;
   readonly appToken: string;
   readonly userToken: string;
+  readonly requestTimeoutMs?: number;
 }
 
 const decode = <A>(
@@ -213,27 +214,33 @@ export const makeAkahuBankProvider = (
     path: string,
     init?: RequestInit
   ): Effect.Effect<ProviderPayload, BankProviderError> => {
-    const requestEffect = Effect.tryPromise({
-      catch: (cause) => new ProviderUnavailableError({ cause, operation }),
-      try: (signal) =>
-        fetchImplementation(`${config.baseUrl}${path}`, {
-          ...init,
-          headers: {
-            Accept: "application/json",
-            Authorization: `Bearer ${config.userToken}`,
-            "X-Akahu-Id": config.appToken,
-          },
-          signal,
-        }),
-    }).pipe(
+    const requestEffect = Effect.acquireUseRelease(
+      Effect.sync(() => new AbortController()),
+      (controller) =>
+        Effect.tryPromise({
+          catch: (cause) => new ProviderUnavailableError({ cause, operation }),
+          try: () =>
+            fetchImplementation(`${config.baseUrl}${path}`, {
+              ...init,
+              headers: {
+                Accept: "application/json",
+                Authorization: `Bearer ${config.userToken}`,
+                "X-Akahu-Id": config.appToken,
+              },
+              signal: controller.signal,
+            }),
+        }).pipe(
+          Effect.flatMap((response) => parseResponse(operation, response))
+        ),
+      (controller) => Effect.sync(() => controller.abort())
+    ).pipe(
       Effect.timeoutOrElse({
-        duration: "10 seconds",
+        duration: config.requestTimeoutMs ?? 10_000,
         orElse: () =>
           Effect.fail(
             new ProviderUnavailableError({ cause: "timeout", operation })
           ),
-      }),
-      Effect.flatMap((response) => parseResponse(operation, response))
+      })
     );
     return init?.method === "POST"
       ? requestEffect
