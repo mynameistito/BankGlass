@@ -41,7 +41,7 @@ NZ official Open Banking / CDR
    Akahu Personal App cache
               |
               v
-Cloudflare Worker + Effect
+Cloudflare Worker + Effect + Alchemy
   |-- Access-protected HTTP API
   |-- read-only MCP endpoint
   |-- AkahuBankProvider Layer
@@ -192,14 +192,13 @@ Requirements: [Bun](https://bun.sh/) and a Cloudflare account. A local D1 databa
 
 ```powershell
 bun install
-Copy-Item .dev.vars.example .dev.vars
-bunx wrangler d1 migrations apply bankglass --local
+Copy-Item .dev.vars.example .env
 bun run dev
 ```
 
 The Worker intentionally fails closed without a valid Access assertion. Use the automated tests for local boundary testing; use the Access-protected custom hostname for interactive end-to-end calls. Do not add a local authentication bypass.
 
-Create `.dev.vars` locally with the following values. These are local development secrets and must not be committed:
+Create `.env` locally with the following values. These are local development secrets and must not be committed:
 
 ```dotenv
 AKAHU_APP_TOKEN=replace-me
@@ -208,9 +207,13 @@ API_BEARER_TOKEN=replace-with-at-least-32-random-bytes
 ACCESS_APP_HOSTNAME=domain.tld
 ACCESS_POLICY_AUD=replace-with-access-application-aud
 ACCESS_TEAM_DOMAIN=https://your-team.cloudflareaccess.com
+AKAHU_API_BASE_URL=https://api.akahu.io/v1
+REFRESH_COOLDOWN_SECONDS=3600
+SYNC_LOOKBACK_DAYS=14
+API_RATE_LIMIT_PER_MINUTE=60
 ```
 
-`.dev.vars` is ignored by Git. Do not use real credentials in tests; tests use deterministic providers and Miniflare bindings.
+`.env` is ignored by Git. Do not use real credentials in tests; tests use deterministic providers and Miniflare bindings.
 
 Generate a bearer token with OpenSSL instead of storing a literal token in shell history:
 
@@ -220,29 +223,27 @@ openssl rand -hex 32
 
 ## Cloudflare deployment
 
-1. Authenticate: `bunx wrangler login`.
-2. Create D1 if it does not already exist: `bunx wrangler d1 create bankglass`.
-3. Put the returned database ID in `wrangler.jsonc` as `d1_databases[0].database_id`.
-4. Choose the intended custom hostname and create a Cloudflare Access self-hosted application covering it. Add the owner-email `Allow` policy and agent `Service Auth` policy, and enable Managed OAuth.
-5. Set `ACCESS_APP_HOSTNAME` and `ACCESS_TEAM_DOMAIN` in `wrangler.jsonc` for the custom hostname and team domain. The Access application's **Application audience (AUD) tag** belongs in a secret, not in `wrangler.jsonc`.
-6. Apply migrations: `bunx wrangler d1 migrations apply bankglass --remote`.
-7. Add or replace the Worker secrets interactively:
+1. Add `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `AKAHU_APP_TOKEN`, `AKAHU_USER_TOKEN`, `API_BEARER_TOKEN`, and `ACCESS_POLICY_AUD` to the deployment environment. Add `ACCESS_TEAM_DOMAIN` as a repository variable.
+2. Create a Cloudflare Access self-hosted application covering `bank.honetito.com`. Add the owner-email `Allow` policy and agent `Service Auth` policy, and enable Managed OAuth.
+3. Deploy locally with `bun run deploy`, or merge to `main` and let `.github/workflows/deploy.yml` run the pinned `mynameistito/alchemy-deploy` action.
+
+Alchemy owns the Worker, D1 database, migration application, custom domain, cron, observability, stage naming, and environment bindings from `alchemy.run.ts`. It adopts the existing production D1 database by its `bankglass` name and migrates the existing Wrangler history to Alchemy's migration bookkeeping on first deploy.
+
+For local deployment, configure the values in `.env` or the shell before running Alchemy:
 
 ```powershell
-bunx wrangler secret put AKAHU_APP_TOKEN
-bunx wrangler secret put AKAHU_USER_TOKEN
-bunx wrangler secret put API_BEARER_TOKEN
-bunx wrangler secret put ACCESS_POLICY_AUD
+AKAHU_APP_TOKEN=...
+AKAHU_USER_TOKEN=...
+API_BEARER_TOKEN=...
+ACCESS_POLICY_AUD=...
 ```
 
-When prompted, enter the value for each secret. For `ACCESS_POLICY_AUD`, use the **Application audience (AUD) tag** from the Cloudflare Access self-hosted application. Running the same command later replaces the existing secret, for example after creating a new Access application or rotating the API bearer token. Do not put Akahu tokens, the API bearer, or the Access AUD in `wrangler.jsonc`, source control, or command-line arguments.
+`ACCESS_POLICY_AUD` is the **Application audience (AUD) tag** from the Cloudflare Access self-hosted application. Do not put Akahu tokens, the API bearer, or the Access AUD in source control or command-line arguments.
 
-8. Run verification: `bun run typecheck`, `bun run test`, and `bun run lint`.
-9. Deploy: `bun run deploy`.
-10. Attach the Worker custom domain, validate browser, Managed OAuth, and service-token access, then disable the public `workers.dev` route.
-11. Call `POST /v1/refresh` once to seed D1.
+4. Run verification: `bun run typecheck`, `bun run test`, and `bun run lint`.
+5. Validate browser, Managed OAuth, and service-token access, then call `POST /v1/refresh` once to seed D1.
 
-Non-secret settings are in `wrangler.jsonc`: one-hour cooldown, 14-day reconciliation window, 60 authenticated requests/minute, and daily Cron. `worker-configuration.d.ts` is generated by `wrangler types`.
+Non-secret settings and deployment resources are in `alchemy.run.ts`: one-hour cooldown, 14-day reconciliation window, 60 authenticated requests/minute, and daily Cron. `wrangler.jsonc` remains only as the local Vitest/Miniflare compatibility configuration.
 
 ## Security and threat model
 

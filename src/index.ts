@@ -1,5 +1,6 @@
 import { Effect, Layer } from "effect";
 
+import type { WorkerEnv } from "../alchemy.run";
 import { authenticateAccess } from "./access-auth";
 import { akahuBankProviderLive } from "./akahu-provider";
 import { BankStore } from "./bank-store";
@@ -9,7 +10,7 @@ import { routeRequest } from "./http-api";
 import { routeMcpRequest } from "./mcp-api";
 import { SyncService, syncServiceLive } from "./sync-service";
 
-const programLayer = (env: Env, cooldown: number, lookback: number) => {
+const programLayer = (env: WorkerEnv, cooldown: number, lookback: number) => {
   const dependencies = Layer.merge(
     d1BankStoreLive(env.DB),
     akahuBankProviderLive({
@@ -80,7 +81,7 @@ const runMcpRequest = (
     try: () => routeMcpRequest(request, store, hostname),
   });
 
-const run = (request: Request, env: Env) =>
+const run = (request: Request, env: WorkerEnv) =>
   Effect.gen(function* runRequest() {
     const config = yield* parseConfig(env);
     return yield* Effect.gen(function* authenticatedRequest() {
@@ -139,10 +140,11 @@ const run = (request: Request, env: Env) =>
   );
 
 export default {
-  fetch: (request: Request, env: Env) => Effect.runPromise(run(request, env)),
+  fetch: (request: Request, env: WorkerEnv) =>
+    Effect.runPromise(run(request, env)),
   scheduled: (
     _controller: ScheduledController,
-    env: Env,
+    env: WorkerEnv,
     context: ExecutionContext
   ) => {
     const sync = Effect.gen(function* sync() {
@@ -168,4 +170,4 @@ export default {
     });
     context.waitUntil(Effect.runPromise(completion));
   },
-} satisfies ExportedHandler<Env>;
+} satisfies ExportedHandler<WorkerEnv>;

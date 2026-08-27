@@ -37,7 +37,20 @@ const RuntimeConfigSchema = Schema.Struct({
 });
 export type RuntimeConfig = typeof RuntimeConfigSchema.Type;
 
-export const parseConfig = (env: Env) =>
+interface ConfigEnv {
+  readonly ACCESS_APP_HOSTNAME: string;
+  readonly ACCESS_POLICY_AUD: string;
+  readonly ACCESS_TEAM_DOMAIN: string;
+  readonly AKAHU_API_BASE_URL: string;
+  readonly AKAHU_APP_TOKEN: string;
+  readonly AKAHU_USER_TOKEN: string;
+  readonly API_BEARER_TOKEN: string;
+  readonly API_RATE_LIMIT_PER_MINUTE: string;
+  readonly REFRESH_COOLDOWN_SECONDS: string;
+  readonly SYNC_LOOKBACK_DAYS: string;
+}
+
+export const parseConfig = (env: ConfigEnv) =>
   Schema.decodeUnknown(RuntimeConfigSchema)({
     accessAppHostname: env.ACCESS_APP_HOSTNAME,
     accessAudience: env.ACCESS_POLICY_AUD,

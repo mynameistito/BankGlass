@@ -30,5 +30,10 @@
     "noPropertyAccessFromIndexSignature": true,
     "exactOptionalPropertyTypes": true
   },
-  "include": ["src", "vitest.config.ts", "worker-configuration.d.ts"]
+  "include": [
+    "alchemy.run.ts",
+    "src",
+    "vitest.config.ts",
+    "worker-configuration.d.ts"
+  ]
 }
