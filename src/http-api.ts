@@ -1,4 +1,5 @@
 import { Effect, Result, Schema } from "effect";
+import { z } from "zod";
 
 import { authenticate } from "./auth";
 import { BankStore } from "./bank-store";
@@ -25,11 +26,12 @@ const json = (body: JsonValue, status = 200, extra: HeadersInit = {}) =>
 const routeNotFound = {
   error: { code: "NOT_FOUND", message: "Route not found" },
 };
+const IsoDateTimeSchema = z.iso.datetime({ offset: true });
 const parseDate = (value: string | null, name: string) => {
   if (value === null) {
     return null;
   }
-  if (Number.isNaN(Date.parse(value))) {
+  if (!IsoDateTimeSchema.safeParse(value).success) {
     throw new InvalidRequestError({
       message: `${name} must be an ISO 8601 date-time`,
     });

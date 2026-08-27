@@ -28,6 +28,7 @@ type, balance, merchant_name AS merchantName, category_name AS categoryName, par
 other_account AS otherAccount, card_suffix AS cardSuffix, provider_updated_at AS providerUpdatedAt,
 data_updated_at AS dataUpdatedAt, synced_at AS syncedAt FROM transactions`;
 const CursorSchema = Schema.Struct({ date: Schema.String, id: Schema.String });
+const syncLeaseSeconds = 5 * 60;
 
 export const makeD1BankStore = (db: D1Database) =>
   BankStore.of({
@@ -35,9 +36,9 @@ export const makeD1BankStore = (db: D1Database) =>
       dbEffect("acquireSync", () =>
         db
           .prepare(
-            "UPDATE sync_state SET status='syncing',started_at=?,last_attempt_at=?,error_code=NULL,error_message=NULL WHERE singleton=1 AND status NOT IN ('syncing','refreshing')"
+            "UPDATE sync_state SET status='syncing',started_at=?,last_attempt_at=?,error_code=NULL,error_message=NULL WHERE singleton=1 AND (status NOT IN ('syncing','refreshing') OR started_at IS NULL OR julianday(started_at) <= julianday(?) - ? / 86400.0)"
           )
-          .bind(now, now)
+          .bind(now, now, now, syncLeaseSeconds)
           .run()
       ).pipe(
         Effect.flatMap((result) =>

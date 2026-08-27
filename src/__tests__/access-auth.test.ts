@@ -28,6 +28,28 @@ describe("Cloudflare Access authentication", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("reuses the JWKS resolver for repeated requests", async () => {
+    let fetchCount = 0;
+    const countingFetch: typeof fetch = (...args) => {
+      fetchCount += 1;
+      return fetchAccessJwks(...args);
+    };
+    const assertion = await makeAccessAssertion();
+
+    const request = () =>
+      new Request("https://bank.example.test/v1/accounts", {
+        headers: { "Cf-Access-Jwt-Assertion": assertion },
+      });
+    await expect(
+      Effect.runPromise(authenticateAccess(request(), config, countingFetch))
+    ).resolves.toBeUndefined();
+    await expect(
+      Effect.runPromise(authenticateAccess(request(), config, countingFetch))
+    ).resolves.toBeUndefined();
+
+    expect(fetchCount).toBe(1);
+  });
+
   it("rejects missing and invalid assertions as typed failures", async () => {
     const errors = await Promise.all(
       [null, "not-a-jwt"].map((assertion) => {
