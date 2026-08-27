@@ -1,4 +1,4 @@
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Result } from "effect";
 
 import type { WorkerEnv } from "../alchemy.run";
 import { authenticateAccess } from "./access-auth";
@@ -90,23 +90,23 @@ const run = (request: Request, env: WorkerEnv) =>
         const store = yield* BankStore;
         const nowSeconds = Math.floor(Date.now() / 1000);
         return yield* Effect.gen(function* limitedMcpRequest() {
-          const rateLimit = yield* Effect.either(
+          const rateLimit = yield* Effect.result(
             store.consumeRateLimit(
               `mcp:${Math.floor(nowSeconds / 60)}`,
               nowSeconds,
               Number(config.apiRateLimitPerMinute)
             )
           );
-          if (rateLimit._tag === "Left") {
-            return rateLimit.left._tag === "ApiRateLimitError"
-              ? rateLimitedResponse(rateLimit.left.retryAfterSeconds)
+          if (Result.isFailure(rateLimit)) {
+            return rateLimit.failure._tag === "ApiRateLimitError"
+              ? rateLimitedResponse(rateLimit.failure.retryAfterSeconds)
               : internalErrorResponse();
           }
-          const response = yield* Effect.either(
+          const response = yield* Effect.result(
             runMcpRequest(request, store, config.accessAppHostname)
           );
-          return response._tag === "Right"
-            ? response.right
+          return Result.isSuccess(response)
+            ? response.success
             : internalErrorResponse();
         });
       }
@@ -124,18 +124,20 @@ const run = (request: Request, env: WorkerEnv) =>
     Effect.catchTag("UnauthorizedAccessRequestError", () =>
       Effect.succeed(accessDeniedResponse())
     ),
-    Effect.catchAll(() =>
-      Effect.succeed(
-        Response.json(
-          {
-            error: {
-              code: "CONFIGURATION_ERROR",
-              message: "Service configuration is invalid",
+    Effect.catchIf(
+      () => true,
+      () =>
+        Effect.succeed(
+          Response.json(
+            {
+              error: {
+                code: "CONFIGURATION_ERROR",
+                message: "Service configuration is invalid",
+              },
             },
-          },
-          { status: 500 }
+            { status: 500 }
+          )
         )
-      )
     )
   );
 
@@ -161,10 +163,10 @@ export default {
       )
     );
     const completion = Effect.gen(function* scheduledCompletion() {
-      const result = yield* Effect.either(sync);
-      if (result._tag === "Left") {
+      const result = yield* Effect.result(sync);
+      if (Result.isFailure(result)) {
         yield* Effect.logError("Scheduled synchronization failed", {
-          errorTag: result.left._tag,
+          errorTag: result.failure._tag,
         });
       }
     });

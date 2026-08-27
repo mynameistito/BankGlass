@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { Effect, Result, Schema } from "effect";
 
 import { authenticate } from "./auth";
 import { BankStore } from "./bank-store";
@@ -232,8 +232,8 @@ const handleRequestError = (error: RequestError) => {
 
 export const routeRequest = (request: Request, config: RuntimeConfig) =>
   Effect.gen(function* routeRequestResult() {
-    const result = yield* Effect.either(routeRequestProgram(request, config));
-    return result._tag === "Right"
-      ? result.right
-      : handleRequestError(result.left);
+    const result = yield* Effect.result(routeRequestProgram(request, config));
+    return Result.isSuccess(result)
+      ? result.success
+      : handleRequestError(result.failure);
   });

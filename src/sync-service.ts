@@ -31,10 +31,10 @@ export interface SyncServiceService {
     readonly requestProviderRefresh: boolean;
   }) => Effect.Effect<SyncResult, SyncError>;
 }
-export class SyncService extends Context.Tag("@bankglass/SyncService")<
+export class SyncService extends Context.Service<
   SyncService,
   SyncServiceService
->() {}
+>()("@bankglass/SyncService") {}
 
 export const makeSyncService = (
   cooldownSeconds: number,

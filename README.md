@@ -196,6 +196,8 @@ Copy-Item .dev.vars.example .env
 bun run dev
 ```
 
+Alchemy does not automatically read Wrangler's `.dev.vars`; the `dev` script passes that file explicitly. To invoke Alchemy directly, use `bun alchemy dev --env-file .dev.vars`.
+
 The Worker intentionally fails closed without a valid Access assertion. Use the automated tests for local boundary testing; use the Access-protected custom hostname for interactive end-to-end calls. Do not add a local authentication bypass.
 
 Create `.env` locally with the following values. These are local development secrets and must not be committed:

@@ -6,15 +6,14 @@ import {
   providers,
   state,
 } from "alchemy/Cloudflare";
-import { redacted, string } from "effect/Config";
-import { gen } from "effect/Effect";
+import { Config, Effect } from "effect";
 
 // The deploy action sets STAGE before invoking Alchemy so preview resources
 // receive the same stable names as the action's preview URL matcher.
 const stage = process.env["STAGE"] ?? "prod";
 const isProduction = stage === "prod";
 
-export const Worker = gen(function* defineWorker() {
+export const Worker = Effect.gen(function* defineWorker() {
   const database = yield* D1.Database("Database", {
     migrations: "./migrations",
     name: isProduction ? "bankglass" : `bankglass-${stage}`,
@@ -28,17 +27,17 @@ export const Worker = gen(function* defineWorker() {
     crons: ["17 3 * * *"],
     domain: isProduction ? "bank.honetito.com" : null,
     env: {
-      ACCESS_APP_HOSTNAME: string("ACCESS_APP_HOSTNAME"),
-      ACCESS_POLICY_AUD: string("ACCESS_POLICY_AUD"),
-      ACCESS_TEAM_DOMAIN: string("ACCESS_TEAM_DOMAIN"),
-      AKAHU_API_BASE_URL: string("AKAHU_API_BASE_URL"),
-      AKAHU_APP_TOKEN: redacted("AKAHU_APP_TOKEN"),
-      AKAHU_USER_TOKEN: redacted("AKAHU_USER_TOKEN"),
-      API_BEARER_TOKEN: redacted("API_BEARER_TOKEN"),
-      API_RATE_LIMIT_PER_MINUTE: string("API_RATE_LIMIT_PER_MINUTE"),
+      ACCESS_APP_HOSTNAME: Config.string("ACCESS_APP_HOSTNAME"),
+      ACCESS_POLICY_AUD: Config.string("ACCESS_POLICY_AUD"),
+      ACCESS_TEAM_DOMAIN: Config.string("ACCESS_TEAM_DOMAIN"),
+      AKAHU_API_BASE_URL: "https://api.akahu.io/v1",
+      AKAHU_APP_TOKEN: Config.redacted("AKAHU_APP_TOKEN"),
+      AKAHU_USER_TOKEN: Config.redacted("AKAHU_USER_TOKEN"),
+      API_BEARER_TOKEN: Config.redacted("API_BEARER_TOKEN"),
+      API_RATE_LIMIT_PER_MINUTE: "60",
       DB: database,
-      REFRESH_COOLDOWN_SECONDS: string("REFRESH_COOLDOWN_SECONDS"),
-      SYNC_LOOKBACK_DAYS: string("SYNC_LOOKBACK_DAYS"),
+      REFRESH_COOLDOWN_SECONDS: "3600",
+      SYNC_LOOKBACK_DAYS: "14",
     },
     main: "./src/index.ts",
     name: `bankglass-${stage}`,
@@ -57,7 +56,7 @@ export default Stack(
     providers: providers(),
     state: state(),
   },
-  gen(function* defineStack() {
+  Effect.gen(function* defineStack() {
     const worker = yield* Worker;
 
     return {

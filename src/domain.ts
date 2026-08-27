@@ -1,7 +1,9 @@
 import { Schema } from "effect";
 
 const IsoDateTime = Schema.String.pipe(
-  Schema.filter((value) => !Number.isNaN(Date.parse(value)))
+  Schema.check(
+    Schema.makeFilter((value: string) => !Number.isNaN(Date.parse(value)))
+  )
 );
 
 export const BankAccountSchema = Schema.Struct({
@@ -17,7 +19,7 @@ export const BankAccountSchema = Schema.Struct({
   providerBalanceRefreshedAt: Schema.NullOr(IsoDateTime),
   providerId: Schema.String,
   providerTransactionsRefreshedAt: Schema.NullOr(IsoDateTime),
-  status: Schema.Literal("active", "inactive"),
+  status: Schema.Literals(["active", "inactive"]),
   syncedAt: IsoDateTime,
   type: Schema.String,
 });

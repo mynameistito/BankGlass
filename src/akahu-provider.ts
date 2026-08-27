@@ -1,4 +1,4 @@
-import { Effect, Layer, Schedule, Schema } from "effect";
+import { Effect, Layer, Result, Schedule, Schema } from "effect";
 
 import { BankProvider } from "./bank-provider";
 import type { BankProviderError } from "./bank-provider";
@@ -15,10 +15,12 @@ import {
 } from "./errors";
 
 const DateTime = Schema.String.pipe(
-  Schema.filter((value) => !Number.isNaN(Date.parse(value)))
+  Schema.check(
+    Schema.makeFilter((value: string) => !Number.isNaN(Date.parse(value)))
+  )
 );
-const NullableString = Schema.optionalWith(Schema.String, { nullable: true });
-const NullableNumber = Schema.optionalWith(Schema.Number, { nullable: true });
+const NullableString = Schema.optional(Schema.NullOr(Schema.String));
+const NullableNumber = Schema.optional(Schema.NullOr(Schema.Number));
 const Meta = Schema.optional(
   Schema.Struct({
     card_suffix: NullableString,
@@ -47,7 +49,7 @@ const AkahuAccount = Schema.Struct({
       transactions: Schema.optional(DateTime),
     })
   ),
-  status: Schema.Literal("ACTIVE", "INACTIVE"),
+  status: Schema.Literals(["ACTIVE", "INACTIVE"]),
   type: Schema.String,
 });
 const AkahuTransaction = Schema.Struct({
@@ -98,22 +100,24 @@ export interface AkahuConfig {
   readonly userToken: string;
 }
 
-const decode = <A, I>(
-  schema: Schema.Schema<A, I>,
+const decode = <A>(
+  schema: Schema.Codec<A, unknown, never, never>,
   operation: string,
   input: ProviderPayload
-) =>
+): Effect.Effect<A, BankProviderError> =>
   Effect.gen(function* decodePayload() {
-    const result = yield* Effect.either(Schema.decodeUnknown(schema)(input));
-    if (result._tag === "Left") {
+    const result = yield* Effect.result(
+      Schema.decodeUnknownEffect(schema)(input)
+    );
+    if (Result.isFailure(result)) {
       return yield* Effect.fail(
         new InvalidProviderResponseError({
-          details: String(result.left),
+          details: String(result.failure),
           operation,
         })
       );
     }
-    return result.right;
+    return result.success;
   });
 
 export const decodeAkahuAccounts = (input: ProviderPayload, now: string) =>
@@ -219,15 +223,17 @@ export const makeAkahuBankProvider = (
           },
         }),
     }).pipe(
-      Effect.timeoutFail({
+      Effect.timeoutOrElse({
         duration: "10 seconds",
-        onTimeout: () =>
-          new ProviderUnavailableError({ cause: "timeout", operation }),
+        orElse: () =>
+          Effect.fail(
+            new ProviderUnavailableError({ cause: "timeout", operation })
+          ),
       }),
       Effect.flatMap((response) => parseResponse(operation, response)),
       Effect.retry({
         schedule: Schedule.exponential("100 millis").pipe(
-          Schedule.intersect(Schedule.recurs(2))
+          Schedule.upTo({ times: 2 })
         ),
         while: (error) => error._tag === "ProviderUnavailableError",
       })

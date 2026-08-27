@@ -32,7 +32,7 @@ export interface BankProviderService {
   >;
   readonly requestRefresh: Effect.Effect<void, BankProviderError>;
 }
-export class BankProvider extends Context.Tag("@bankglass/BankProvider")<
+export class BankProvider extends Context.Service<
   BankProvider,
   BankProviderService
->() {}
+>()("@bankglass/BankProvider") {}

@@ -3,29 +3,37 @@ import { Effect, Schema } from "effect";
 import { InvalidRequestError } from "./errors";
 
 const PositiveIntegerString = Schema.String.pipe(
-  Schema.filter((value) => /^\d+$/u.test(value) && Number(value) > 0)
+  Schema.check(
+    Schema.makeFilter(
+      (value: string) => /^\d+$/u.test(value) && Number(value) > 0
+    )
+  )
 );
 const HttpsOrigin = Schema.String.pipe(
-  Schema.filter((value) => {
-    try {
-      const url = new URL(value);
-      return url.protocol === "https:" && url.origin === value;
-    } catch {
-      return false;
-    }
-  })
+  Schema.check(
+    Schema.makeFilter((value: string) => {
+      try {
+        const url = new URL(value);
+        return url.protocol === "https:" && url.origin === value;
+      } catch {
+        return false;
+      }
+    })
+  )
 );
 const Hostname = Schema.String.pipe(
-  Schema.filter(
-    (value) =>
-      value.length > 0 &&
-      value.length <= 253 &&
-      /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/u.test(value)
+  Schema.check(
+    Schema.makeFilter(
+      (value) =>
+        value.length > 0 &&
+        value.length <= 253 &&
+        /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/u.test(value)
+    )
   )
 );
 const RuntimeConfigSchema = Schema.Struct({
   accessAppHostname: Hostname,
-  accessAudience: Schema.String.pipe(Schema.minLength(1)),
+  accessAudience: Schema.String.pipe(Schema.check(Schema.isMinLength(1))),
   accessTeamDomain: HttpsOrigin,
   akahuAppToken: Schema.String,
   akahuUserToken: Schema.String,
@@ -51,7 +59,7 @@ interface ConfigEnv {
 }
 
 export const parseConfig = (env: ConfigEnv) =>
-  Schema.decodeUnknown(RuntimeConfigSchema)({
+  Schema.decodeUnknownEffect(RuntimeConfigSchema)({
     accessAppHostname: env.ACCESS_APP_HOSTNAME,
     accessAudience: env.ACCESS_POLICY_AUD,
     accessTeamDomain: env.ACCESS_TEAM_DOMAIN,
