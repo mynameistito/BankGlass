@@ -5,7 +5,7 @@
   "module": "src/index.ts",
   "scripts": {
     "deploy": "alchemy deploy",
-    "dev": "alchemy dev --env-file .dev.vars",
+    "dev": "STAGE=dev alchemy dev --env-file .dev.vars",
     "format": "ultracite fix",
     "lint": "ultracite check",
     "test": "vitest run",
