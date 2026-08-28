@@ -9,12 +9,34 @@ const PositiveIntegerString = Schema.String.pipe(
     )
   )
 );
+const NonEmptyString = Schema.String.pipe(
+  Schema.check(Schema.makeFilter((value: string) => value.trim().length > 0))
+);
 const HttpsOrigin = Schema.String.pipe(
   Schema.check(
     Schema.makeFilter((value: string) => {
       try {
         const url = new URL(value);
         return url.protocol === "https:" && url.origin === value;
+      } catch {
+        return false;
+      }
+    })
+  )
+);
+const HttpsApiBaseUrl = Schema.String.pipe(
+  Schema.check(
+    Schema.makeFilter((value: string) => {
+      try {
+        const url = new URL(value);
+        return [
+          url.protocol === "https:",
+          url.hostname.length > 0,
+          url.username.length === 0,
+          url.password.length === 0,
+          url.search.length === 0,
+          url.hash.length === 0,
+        ].every(Boolean);
       } catch {
         return false;
       }
@@ -35,10 +57,10 @@ const RuntimeConfigSchema = Schema.Struct({
   accessAppHostname: Hostname,
   accessAudience: Schema.String.pipe(Schema.check(Schema.isMinLength(1))),
   accessTeamDomain: HttpsOrigin,
-  akahuAppToken: Schema.String,
-  akahuUserToken: Schema.String,
-  apiBaseUrl: Schema.String,
-  apiBearerToken: Schema.String,
+  akahuAppToken: NonEmptyString,
+  akahuUserToken: NonEmptyString,
+  apiBaseUrl: HttpsApiBaseUrl,
+  apiBearerToken: NonEmptyString,
   apiRateLimitPerMinute: PositiveIntegerString,
   refreshCooldownSeconds: PositiveIntegerString,
   syncLookbackDays: PositiveIntegerString,
