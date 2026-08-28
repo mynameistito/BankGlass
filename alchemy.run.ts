@@ -26,7 +26,7 @@ export const Worker = Effect.gen(function* defineWorker() {
       date: "2026-07-11",
       flags: ["nodejs_compat"],
     },
-    crons: ["17 3 * * *"],
+    crons: isProduction ? ["17 3 * * *"] : [],
     domain: isProduction ? "bank.honetito.com" : null,
     env: {
       ACCESS_APP_HOSTNAME: Config.string("ACCESS_APP_HOSTNAME"),
