@@ -1,12 +1,8 @@
 import { Effect, Layer, Schema } from "effect";
 
 import { BankStore } from "./bank-store";
-import type {
-  BankAccount,
-  SyncStatus,
-  TransactionQuery,
-  TransactionRecord,
-} from "./domain";
+import type { TransactionQuery } from "./domain";
+import { BankAccountSchema } from "./domain";
 import {
   ApiRateLimitError,
   DatabaseError,
@@ -28,6 +24,41 @@ type, balance, merchant_name AS merchantName, category_name AS categoryName, par
 other_account AS otherAccount, card_suffix AS cardSuffix, provider_updated_at AS providerUpdatedAt,
 data_updated_at AS dataUpdatedAt, synced_at AS syncedAt FROM transactions`;
 const CursorSchema = Schema.Struct({ date: Schema.String, id: Schema.String });
+const TransactionRowSchema = Schema.Struct({
+  accountId: Schema.String,
+  amount: Schema.Number,
+  balance: Schema.NullOr(Schema.Number),
+  cardSuffix: Schema.NullOr(Schema.String),
+  categoryName: Schema.NullOr(Schema.String),
+  code: Schema.NullOr(Schema.String),
+  currency: Schema.String,
+  dataUpdatedAt: Schema.String,
+  description: Schema.String,
+  id: Schema.String,
+  merchantName: Schema.NullOr(Schema.String),
+  otherAccount: Schema.NullOr(Schema.String),
+  particulars: Schema.NullOr(Schema.String),
+  providerUpdatedAt: Schema.String,
+  reference: Schema.NullOr(Schema.String),
+  status: Schema.Literals(["posted", "pending"]),
+  syncedAt: Schema.String,
+  transactionAt: Schema.String,
+  type: Schema.String,
+});
+const TransactionPageSchema = Schema.Struct({
+  items: Schema.Array(TransactionRowSchema),
+  nextCursor: Schema.NullOr(Schema.String),
+});
+const SyncStatusSchema = Schema.Struct({
+  errorCode: Schema.NullOr(Schema.String),
+  errorMessage: Schema.NullOr(Schema.String),
+  lastAttemptAt: Schema.NullOr(Schema.String),
+  lastProviderRefreshRequestedAt: Schema.NullOr(Schema.String),
+  lastSuccessAt: Schema.NullOr(Schema.String),
+  providerRefreshedAt: Schema.NullOr(Schema.String),
+  startedAt: Schema.NullOr(Schema.String),
+  status: Schema.String,
+});
 const syncLeaseSeconds = 5 * 60;
 const requireLease = (owned: boolean) =>
   owned ? Effect.void : Effect.fail(new SyncInProgressError({}));
@@ -108,34 +139,40 @@ export const makeD1BankStore = (db: D1Database) =>
           .run();
       }),
     getAccount: (id) =>
-      dbEffect("getAccount", () =>
-        db
-          .prepare(`${accountSelect} WHERE id = ?`)
-          .bind(id)
-          .first<BankAccount>()
-      ).pipe(
-        Effect.flatMap((item) =>
-          item === null
-            ? Effect.fail(new NotFoundError({ resource: "account" }))
-            : Effect.succeed(item)
-        )
-      ),
+      Effect.tryPromise({
+        catch: (cause) =>
+          cause instanceof NotFoundError
+            ? cause
+            : new DatabaseError({ cause, operation: "getAccount" }),
+        try: async () => {
+          const item = await db
+            .prepare(`${accountSelect} WHERE id = ?`)
+            .bind(id)
+            .first<unknown>();
+          if (item === null) {
+            throw new NotFoundError({ resource: "account" });
+          }
+          return Schema.decodeUnknownSync(BankAccountSchema)(item);
+        },
+      }),
     getSyncStatus: dbEffect("getSyncStatus", async () => {
       const row = await db
         .prepare(`SELECT status, started_at AS startedAt, last_attempt_at AS lastAttemptAt, last_success_at AS lastSuccessAt,
       last_provider_refresh_requested_at AS lastProviderRefreshRequestedAt, provider_refreshed_at AS providerRefreshedAt,
       error_code AS errorCode, error_message AS errorMessage FROM sync_state WHERE singleton=1`)
-        .first<SyncStatus>();
+        .first<unknown>();
       if (row === null) {
         throw new TypeError("Missing sync state");
       }
-      return row;
+      return Schema.decodeUnknownSync(SyncStatusSchema)(row);
     }),
     listAccounts: dbEffect("listAccounts", async () => {
       const result = await db
         .prepare(`${accountSelect} ORDER BY name`)
-        .all<BankAccount>();
-      return result.results;
+        .all<unknown>();
+      return result.results.map((item) =>
+        Schema.decodeUnknownSync(BankAccountSchema)(item)
+      );
     }),
     listTransactions: (query: TransactionQuery) =>
       dbEffect("listTransactions", async () => {
@@ -173,8 +210,10 @@ export const makeD1BankStore = (db: D1Database) =>
             `${transactionSelect}${where} ORDER BY transaction_at DESC, id DESC LIMIT ?`
           )
           .bind(...values, query.limit + 1)
-          .all<TransactionRecord>();
-        const rows = result.results;
+          .all<unknown>();
+        const rows = result.results.map((item) =>
+          Schema.decodeUnknownSync(TransactionRowSchema)(item)
+        );
         const hasMore = rows.length > query.limit;
         const items = rows.slice(0, query.limit);
         const last = items.at(-1);
@@ -184,7 +223,10 @@ export const makeD1BankStore = (db: D1Database) =>
                 JSON.stringify({ date: last["transactionAt"], id: last["id"] })
               )
             : null;
-        return { items, nextCursor };
+        return Schema.decodeUnknownSync(TransactionPageSchema)({
+          items,
+          nextCursor,
+        });
       }),
     markRefreshRequested: (now, leaseId) =>
       dbEffect("markRefreshRequested", () =>

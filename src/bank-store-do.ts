@@ -2,12 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 import { Effect, Layer, Schema } from "effect";
 
 import { BankStore } from "./bank-store";
-import type {
-  BankAccount,
-  SyncStatus,
-  TransactionPage,
-  TransactionRecord,
-} from "./domain";
+import type { BankAccount, SyncStatus } from "./domain";
 import {
   BankAccountSchema,
   PendingTransactionSchema,
@@ -85,16 +80,38 @@ const accountSelect =
   "SELECT id, provider_id AS providerId, institution, name, type, status, currency, current_balance AS currentBalance, available_balance AS availableBalance, formatted_account AS formattedAccount, holder_name AS holderName, provider_balance_refreshed_at AS providerBalanceRefreshedAt, provider_transactions_refreshed_at AS providerTransactionsRefreshedAt, data_updated_at AS dataUpdatedAt, synced_at AS syncedAt FROM accounts";
 const transactionSelect =
   "SELECT id, account_id AS accountId, status, transaction_at AS transactionAt, description, amount, currency, type, balance, merchant_name AS merchantName, category_name AS categoryName, particulars, code, reference, other_account AS otherAccount, card_suffix AS cardSuffix, provider_created_at AS providerCreatedAt, provider_updated_at AS providerUpdatedAt, data_updated_at AS dataUpdatedAt, synced_at AS syncedAt FROM transactions";
-const TransactionPageSchema = Schema.declare<TransactionPage>(
-  (_value): _value is TransactionPage => true
-);
-interface TransactionRow extends TransactionRecord {
-  readonly [key: string]: string | number | null;
-}
+const TransactionRowSchema = Schema.Struct({
+  accountId: Schema.String,
+  amount: Schema.Number,
+  balance: Schema.NullOr(Schema.Number),
+  cardSuffix: Schema.NullOr(Schema.String),
+  categoryName: Schema.NullOr(Schema.String),
+  code: Schema.NullOr(Schema.String),
+  currency: Schema.String,
+  dataUpdatedAt: Schema.String,
+  description: Schema.String,
+  id: Schema.String,
+  merchantName: Schema.NullOr(Schema.String),
+  otherAccount: Schema.NullOr(Schema.String),
+  particulars: Schema.NullOr(Schema.String),
+  providerUpdatedAt: Schema.String,
+  reference: Schema.NullOr(Schema.String),
+  status: Schema.Literals(["posted", "pending"]),
+  syncedAt: Schema.String,
+  transactionAt: Schema.String,
+  type: Schema.String,
+});
+const TransactionPageSchema = Schema.Struct({
+  items: Schema.Array(TransactionRowSchema),
+  nextCursor: Schema.NullOr(Schema.String),
+});
 type SqlStorage = DurableObjectState["storage"]["sql"];
+type SqlRow = Record<string, string | number | null>;
 type CommandHandler = (sql: SqlStorage, args: readonly unknown[]) => Reply;
-const rowAccount = (row: typeof AccountSchema.Type): BankAccount => row;
-const rowSync = (row: typeof SyncSchema.Type): SyncStatus => row;
+const rowAccount = (row: SqlRow): BankAccount =>
+  Schema.decodeUnknownSync(AccountSchema)(row);
+const rowSync = (row: SqlRow): SyncStatus =>
+  Schema.decodeUnknownSync(SyncSchema)(row);
 const reset: CommandHandler = (sql) => {
   sql.exec("DELETE FROM transactions");
   sql.exec("DELETE FROM accounts");
@@ -160,7 +177,7 @@ const getSyncStatus: CommandHandler = (sql) => ({
   ok: true,
   value: rowSync(
     sql
-      .exec<typeof SyncSchema.Type>(
+      .exec<SqlRow>(
         "SELECT status, started_at AS startedAt, last_attempt_at AS lastAttemptAt, last_success_at AS lastSuccessAt, last_provider_refresh_requested_at AS lastProviderRefreshRequestedAt, provider_refreshed_at AS providerRefreshedAt, error_code AS errorCode, error_message AS errorMessage FROM sync_state WHERE singleton=1"
       )
       .one()
@@ -169,15 +186,13 @@ const getSyncStatus: CommandHandler = (sql) => ({
 const listAccounts: CommandHandler = (sql) => ({
   ok: true,
   value: sql
-    .exec<typeof AccountSchema.Type>(`${accountSelect} ORDER BY name`)
+    .exec<SqlRow>(`${accountSelect} ORDER BY name`)
     .toArray()
     .map(rowAccount),
 });
 const getAccount: CommandHandler = (sql, args) => {
   const [id] = Schema.decodeUnknownSync(Schema.Tuple([Schema.String]))(args);
-  const [row] = sql
-    .exec<typeof AccountSchema.Type>(`${accountSelect} WHERE id=?`, id)
-    .toArray();
+  const [row] = sql.exec<SqlRow>(`${accountSelect} WHERE id=?`, id).toArray();
   return row
     ? { ok: true, value: rowAccount(row) }
     : { error: "not-found", ok: false };
@@ -205,7 +220,7 @@ const listTransactions: CommandHandler = (sql, args) => {
     values.push(cursor.date, cursor.date, cursor.id);
   }
   const rows = sql
-    .exec<TransactionRow>(
+    .exec<SqlRow>(
       `${
         transactionSelect +
         (where.length ? " WHERE " + where.join(" AND ") : "")
@@ -214,17 +229,20 @@ const listTransactions: CommandHandler = (sql, args) => {
       q.limit + 1
     )
     .toArray();
-  const items = rows.slice(0, q.limit);
+  const decodedRows = rows.map((row) =>
+    Schema.decodeUnknownSync(TransactionRowSchema)(row)
+  );
+  const items = decodedRows.slice(0, q.limit);
   const last = items.at(-1);
   return {
     ok: true,
-    value: {
+    value: Schema.decodeUnknownSync(TransactionPageSchema)({
       items,
       nextCursor:
         rows.length > q.limit && last
           ? btoa(JSON.stringify({ date: last.transactionAt, id: last.id }))
           : null,
-    },
+    }),
   };
 };
 const consumeRateLimit: CommandHandler = (sql, args) => {
@@ -396,8 +414,12 @@ export class BankStoreDO extends DurableObject {
         ? this.ctx.storage.transactionSync(execute)
         : execute();
     } catch (error) {
+      const databaseError =
+        error instanceof DatabaseError
+          ? error
+          : new DatabaseError({ cause: error, operation: "command" });
       return {
-        error: error instanceof Error ? error.message : "database",
+        error: databaseError._tag,
         ok: false,
       };
     }
@@ -418,8 +440,7 @@ const isDomainError = (cause: unknown) =>
   cause instanceof SyncInProgressError;
 const toDatabaseError = (cause: unknown, operation: string): DatabaseError => {
   if (isDomainError(cause)) {
-    // SAFETY: isDomainError confirms this is an Effect domain error; the cast
-    // keeps the adapter's declared database error surface narrow.
+    // SAFETY: run only receives errors produced by this adapter's reply mapping.
     return cause as DatabaseError;
   }
   return new DatabaseError({ cause, operation });

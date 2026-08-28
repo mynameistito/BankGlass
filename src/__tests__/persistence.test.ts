@@ -210,6 +210,71 @@ describe("D1 banking persistence", () => {
     expect(result.providerId).toBe(account.providerId);
   });
 
+  it("maps malformed account rows to a database error", async () => {
+    await Effect.runPromise(store.acquireSync(time, leaseId, null));
+    await Effect.runPromise(
+      store.saveSnapshot({
+        accounts: [account],
+        leaseId,
+        pending: [],
+        posted: [],
+        reconcilePostedFrom: "2026-08-25T00:00:00.000Z",
+        syncedAt: time,
+      })
+    );
+    await env.DB.prepare("UPDATE accounts SET current_balance=? WHERE id=?")
+      .bind("not-a-number", account.id)
+      .run();
+
+    const error = await Effect.runPromise(
+      Effect.flip(store.getAccount(account.id))
+    );
+
+    expect(error._tag).toBe("DatabaseError");
+  });
+
+  it("maps malformed transaction rows to a database error", async () => {
+    await Effect.runPromise(store.acquireSync(time, leaseId, null));
+    await Effect.runPromise(
+      store.saveSnapshot({
+        accounts: [account],
+        leaseId,
+        pending: [],
+        posted: [posted],
+        reconcilePostedFrom: "2026-08-25T00:00:00.000Z",
+        syncedAt: time,
+      })
+    );
+    await env.DB.prepare("UPDATE transactions SET amount=? WHERE id=?")
+      .bind("not-a-number", posted.id)
+      .run();
+
+    const error = await Effect.runPromise(
+      Effect.flip(
+        store.listTransactions({
+          accountId: null,
+          cursor: null,
+          from: null,
+          limit: 10,
+          status: null,
+          to: null,
+        })
+      )
+    );
+
+    expect(error._tag).toBe("DatabaseError");
+  });
+
+  it("maps malformed sync-status rows to a database error", async () => {
+    await env.DB.prepare(
+      "UPDATE sync_state SET error_message=CAST(X'01' AS BLOB) WHERE singleton=1"
+    ).run();
+
+    const error = await Effect.runPromise(Effect.flip(store.getSyncStatus));
+
+    expect(error._tag).toBe("DatabaseError");
+  });
+
   it("recovers a stale synchronization lock", async () => {
     await env.DB.prepare("UPDATE sync_state SET status='syncing',started_at=?")
       .bind("2026-08-25T00:00:00.000Z")
