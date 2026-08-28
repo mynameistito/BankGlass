@@ -14,7 +14,8 @@ interface WorkerModule {
 declare global {
   namespace Cloudflare {
     interface Env extends WorkerEnv {
-      readonly DB: WorkerEnv["DB"];
+      readonly BANK_STORE: WorkerEnv["BANK_STORE"];
+      readonly DB: D1Database;
     }
 
     interface GlobalProps {
@@ -23,6 +24,7 @@ declare global {
   }
 
   interface Env extends WorkerEnv {
-    readonly DB: WorkerEnv["DB"];
+    readonly BANK_STORE: WorkerEnv["BANK_STORE"];
+    readonly DB: D1Database;
   }
 }

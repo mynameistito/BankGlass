@@ -2,18 +2,18 @@
 
 BankGlass is a self-hosted, read-only API and [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for the accounts connected to one [Akahu Personal App](https://developers.akahu.nz/docs/personal-apps).
 
-It periodically copies account, balance, and transaction data from Akahu into Cloudflare D1, then makes the cached data available to trusted applications and AI agents. It cannot make payments or modify bank accounts.
+It periodically copies account, balance, and transaction data from Akahu into a Cloudflare Durable Object, then makes the cached data available to trusted applications and AI agents. It cannot make payments or modify bank accounts.
 
 > [!IMPORTANT] BankGlass is a personal, single-user service. It is not a multi-user banking product and is not affiliated with Akahu or any financial institution.
 
 ## What It Does
 
 - Reads every account connected to the configured Akahu Personal App, across the institutions Akahu supports.
-- Stores normalized accounts, balances, posted transactions, and pending transactions in Cloudflare D1.
+- Stores normalized accounts, balances, posted transactions, and pending transactions in a Cloudflare Durable Object SQLite store.
 - Exposes a REST API protected by Cloudflare Access and a separate bearer token.
 - Exposes four read-only MCP tools protected by Cloudflare Access.
 - Refreshes automatically once a day and supports a rate-limited manual refresh.
-- Keeps reads fast and private by serving them from D1 instead of calling Akahu on every request.
+- Keeps reads fast and private by serving them from the Durable Object instead of calling Akahu on every request.
 
 BankGlass deliberately has no signup flow, tenants, payment scopes, payment endpoints, or arbitrary upstream proxy.
 
@@ -32,10 +32,10 @@ Connected financial institutions
   REST API        MCP server
       \              /
        v            v
-        Cloudflare D1
+        Cloudflare Durable Object
 ```
 
-[Alchemy](https://alchemy.run/) provisions the Worker, D1 database, migrations, custom domain, scheduled job, and observability. [Effect](https://effect.website/) provides the service architecture, schemas, retries, timeouts, typed errors, and orchestration.
+[Alchemy](https://alchemy.run/) provisions the Worker, Durable Object, custom domain, scheduled job, and observability. [Effect](https://effect.website/) provides the service architecture, schemas, retries, timeouts, typed errors, and orchestration.
 
 ## Requirements
 
@@ -106,7 +106,7 @@ bun run dev
 
 Alchemy receives `.dev.vars` through the `dev` script. The Worker intentionally has no local authentication bypass, so use the test suite for local boundary testing and an Access-protected deployment for end-to-end requests.
 
-`.dev.vars`, `.env`, local D1 data, Alchemy state, and Wrangler state are ignored by Git. Never commit real credentials.
+`.dev.vars`, `.env`, local Durable Object data, Alchemy state, and Wrangler state are ignored by Git. Never commit real credentials.
 
 ## Deploy
 
@@ -146,7 +146,7 @@ The included deployment workflow deploys `main` after CI succeeds and creates pr
 
 1. Confirm the custom hostname is covered by Cloudflare Access.
 2. Test interactive and service-token authentication.
-3. Call `POST /v1/refresh` once to seed D1.
+3. Call `POST /v1/refresh` once to seed the Durable Object.
 4. Confirm `GET /v1/status` reports a successful sync.
 
 ## REST API
@@ -222,13 +222,13 @@ Do not send `API_BEARER_TOKEN` to `/mcp`. Managed OAuth uses the `Authorization`
 
 ## Data Freshness
 
-Akahu reads are cached, and refresh requests are asynchronous. A successful BankGlass sync means the current Akahu cache was stored in D1; it does not guarantee that an institution supplied newer data.
+Akahu reads are cached, and refresh requests are asynchronous. A successful BankGlass sync means the current Akahu cache was stored in the Durable Object; it does not guarantee that an institution supplied newer data.
 
 - `dataUpdatedAt`: when BankGlass normalized the record.
 - `providerRefreshedAt`: Akahu's reported account-data freshness.
-- `syncedAt`: when BankGlass committed the snapshot to D1.
+- `syncedAt`: when BankGlass committed the snapshot to the Durable Object.
 - `lastProviderRefreshRequestedAt`: when BankGlass asked Akahu to refresh.
-- `lastSuccessAt`: when the complete Akahu-to-D1 sync last succeeded.
+- `lastSuccessAt`: when the complete Akahu-to-cache sync last succeeded.
 
 The default schedule runs daily at 03:17 UTC. Manual refreshes have a one-hour cooldown to match the Akahu Personal App refresh policy. Posted transactions are reconciled across the latest 14 days by default, with a safety limit of 750 transactions or 100 provider pages per sync. Pending transactions are replaced on each sync because Akahu does not provide stable IDs for them.
 
@@ -237,9 +237,9 @@ The default schedule runs daily at 03:17 UTC. Manual refreshes have a one-hour c
 - Cloudflare Access protects every route, and the Worker independently validates Access JWTs.
 - REST routes require a second bearer token.
 - MCP tools and Akahu permissions are read-only; there are no payment operations.
-- Akahu and API credentials are Worker secrets, not D1 records.
+- Akahu and API credentials are Worker secrets, not database records.
 - REST data responses are not cached and include restrictive security headers.
-- Input limits, D1-backed rate limiting, sync locking, and idempotent reconciliation reduce abuse and consistency risks.
+- Input limits, Durable Object-backed rate limiting, sync locking, and idempotent reconciliation reduce abuse and consistency risks.
 - Logs contain operation and error tags, not provider responses, account data, transactions, or credentials.
 
 This does not protect against compromise of your Cloudflare account, Akahu account, client device, or secret manager. Enable MFA, restrict account membership, and rotate credentials after suspected exposure.
@@ -252,7 +252,7 @@ bun run test
 bun run check
 ```
 
-Tests run in workerd against a local D1 binding and do not require an Akahu account. They cover Access JWT validation, REST and MCP boundaries, provider decoding and retry behavior, synchronization, persistence, pagination, rate limits, cooldowns, and security headers.
+Tests run in workerd against local Worker bindings and do not require an Akahu account. They cover Access JWT validation, REST and MCP boundaries, provider decoding and retry behavior, synchronization, persistence, pagination, rate limits, cooldowns, and security headers.
 
 ## License
 

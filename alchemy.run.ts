@@ -1,7 +1,7 @@
 import { Stack } from "alchemy";
 import type { InferEnv } from "alchemy/Cloudflare";
 import {
-  D1,
+  DurableObject as DurableObjectResource,
   Worker as WorkerResource,
   providers,
   state,
@@ -17,9 +17,8 @@ if (!stage) {
 const isProduction = stage === "prod";
 
 export const Worker = Effect.gen(function* defineWorker() {
-  const database = yield* D1.Database("Database", {
-    migrations: "./migrations",
-    name: isProduction ? "bankglass" : `bankglass-${stage}`,
+  const bankStore = DurableObjectResource("BANK_STORE", {
+    className: "BankStoreDO",
   });
 
   return yield* WorkerResource("Worker", {
@@ -42,7 +41,7 @@ export const Worker = Effect.gen(function* defineWorker() {
       API_RATE_LIMIT_PER_MINUTE: Config.string(
         "API_RATE_LIMIT_PER_MINUTE"
       ).pipe(Config.orElse(() => Config.succeed("60"))),
-      DB: database,
+      BANK_STORE: bankStore,
       REFRESH_COOLDOWN_SECONDS: Config.string("REFRESH_COOLDOWN_SECONDS").pipe(
         Config.orElse(() => Config.succeed("3600"))
       ),
