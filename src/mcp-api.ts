@@ -12,8 +12,60 @@ const readOnlyAnnotations = {
   readOnlyHint: true,
 };
 
+const accountOutputSchema = z.object({
+  availableBalance: z.number().nullable(),
+  currency: z.string().nullable(),
+  currentBalance: z.number().nullable(),
+  dataUpdatedAt: z.string(),
+  formattedAccount: z.string().nullable(),
+  holderName: z.string().nullable(),
+  id: z.string(),
+  institution: z.string(),
+  name: z.string(),
+  providerBalanceRefreshedAt: z.string().nullable(),
+  providerId: z.string(),
+  providerTransactionsRefreshedAt: z.string().nullable(),
+  status: z.enum(["active", "inactive"]),
+  syncedAt: z.string(),
+  type: z.string(),
+});
+
+const transactionOutputSchema = z.object({
+  accountId: z.string(),
+  amount: z.number(),
+  balance: z.number().nullable(),
+  cardSuffix: z.string().nullable(),
+  categoryName: z.string().nullable(),
+  code: z.string().nullable(),
+  currency: z.string(),
+  dataUpdatedAt: z.string(),
+  description: z.string(),
+  id: z.string(),
+  merchantName: z.string().nullable(),
+  otherAccount: z.string().nullable(),
+  particulars: z.string().nullable(),
+  providerUpdatedAt: z.string(),
+  reference: z.string().nullable(),
+  status: z.enum(["posted", "pending"]),
+  syncedAt: z.string(),
+  transactionAt: z.string(),
+  type: z.string(),
+});
+
+const syncStatusOutputSchema = z.object({
+  errorCode: z.string().nullable(),
+  errorMessage: z.string().nullable(),
+  lastAttemptAt: z.string().nullable(),
+  lastProviderRefreshRequestedAt: z.string().nullable(),
+  lastSuccessAt: z.string().nullable(),
+  providerRefreshedAt: z.string().nullable(),
+  startedAt: z.string().nullable(),
+  status: z.string(),
+});
+
 const successfulToolResult = <Data>(data: Data) => ({
   content: [{ text: JSON.stringify(data), type: "text" as const }],
+  structuredContent: data,
 });
 
 const failedToolResult = (errorTag: string) => ({
@@ -51,6 +103,7 @@ const createServer = (store: BankStoreService) => {
       annotations: readOnlyAnnotations,
       description: "List the owner's locally cached accounts and balances",
       inputSchema: z.object({}),
+      outputSchema: z.array(accountOutputSchema),
     },
     () => runTool(store.listAccounts)
   );
@@ -61,6 +114,15 @@ const createServer = (store: BankStoreService) => {
       annotations: readOnlyAnnotations,
       description: "Get one account balance and its freshness timestamps",
       inputSchema: z.object({ accountId: z.string().min(1) }),
+      outputSchema: z.object({
+        accountId: z.string(),
+        available: z.number().nullable(),
+        currency: z.string().nullable(),
+        current: z.number().nullable(),
+        dataUpdatedAt: z.string(),
+        providerRefreshedAt: z.string().nullable(),
+        syncedAt: z.string(),
+      }),
     },
     ({ accountId }) =>
       runTool(
@@ -92,6 +154,10 @@ const createServer = (store: BankStoreService) => {
         status: z.enum(["posted", "pending"]).default("posted"),
         to: z.iso.datetime({ offset: true }).optional(),
       }),
+      outputSchema: z.object({
+        items: z.array(transactionOutputSchema),
+        nextCursor: z.string().nullable(),
+      }),
     },
     ({ accountId, cursor, from, limit, status, to }) =>
       runTool(
@@ -113,6 +179,7 @@ const createServer = (store: BankStoreService) => {
       description:
         "Get synchronization state and provider freshness timestamps",
       inputSchema: z.object({}),
+      outputSchema: syncStatusOutputSchema,
     },
     () => runTool(store.getSyncStatus)
   );
