@@ -10,6 +10,8 @@ import { routeRequest } from "./http-api";
 import { routeMcpRequest } from "./mcp-api";
 import { SyncService, syncServiceLive } from "./sync-service";
 
+export { BankStoreDO } from "./bank-store-do";
+
 const programLayer = (env: WorkerEnv, cooldown: number, lookback: number) => {
   const dependencies = Layer.merge(
     // Alchemy's inferred namespace uses the generic runtime stub shape.
