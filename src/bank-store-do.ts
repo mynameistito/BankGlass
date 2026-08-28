@@ -391,7 +391,10 @@ export class BankStoreDO extends DurableObject {
       if (!handler) {
         throw new Error(`Unknown bank store command: ${command.name}`);
       }
-      return handler(this.ctx.storage.sql, command.args);
+      const execute = () => handler(this.ctx.storage.sql, command.args);
+      return command.name === "saveSnapshot"
+        ? this.ctx.storage.transactionSync(execute)
+        : execute();
     } catch (error) {
       return {
         error: error instanceof Error ? error.message : "database",
@@ -400,12 +403,10 @@ export class BankStoreDO extends DurableObject {
     }
   }
 }
-interface StoreStub {
+export interface StoreStub {
   readonly command: BankStoreDO["command"];
 }
-const isStoreStub = (
-  value: DurableObjectStub | null
-): value is DurableObjectStub & StoreStub =>
+export const isStoreStub = <T>(value: T): value is T & StoreStub =>
   typeof value === "object" &&
   value !== null &&
   "command" in value &&

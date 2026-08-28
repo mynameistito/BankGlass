@@ -1,7 +1,9 @@
-import { env } from "cloudflare:test";
+import { env, runInDurableObject } from "cloudflare:test";
 import { Effect } from "effect";
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { BankStore } from "../bank-store";
+import { doBankStoreLive, isStoreStub } from "../bank-store-do";
 import { makeD1BankStore } from "../d1-bank-store";
 import type {
   BankAccount,
@@ -285,5 +287,76 @@ describe("D1 banking persistence", () => {
     expect(accounts).toStrictEqual([]);
     expect(status.status).toBe("syncing");
     expect(status.startedAt).toBe("2026-08-26T00:06:00.000Z");
+  });
+});
+
+describe("Durable Object banking persistence", () => {
+  it("preserves the prior snapshot when a write fails mid-snapshot", async () => {
+    const store = await Effect.runPromise(
+      BankStore.pipe(Effect.provide(doBankStoreLive(env.BANK_STORE)))
+    );
+    const doAccount = { ...account, id: "do_account_a", providerId: "do-a" };
+    const doPosted = {
+      ...posted,
+      accountId: doAccount.id,
+      id: "do_transaction_t",
+      providerId: "do-t",
+    };
+
+    await Effect.runPromise(store.acquireSync(time, "do-lease", null));
+    await Effect.runPromise(
+      store.saveSnapshot({
+        accounts: [doAccount],
+        leaseId: "do-lease",
+        pending: [],
+        posted: [doPosted],
+        reconcilePostedFrom: "2026-08-25T00:00:00.000Z",
+        syncedAt: time,
+      })
+    );
+
+    const reply = await runInDurableObject(
+      env.BANK_STORE.getByName("bankglass"),
+      (instance) => {
+        if (!isStoreStub(instance)) {
+          throw new TypeError("BANK_STORE does not expose the command RPC");
+        }
+        return instance.command({
+          args: [
+            {
+              accounts: [
+                { ...doAccount, name: "Changed" },
+                { ...doAccount, id: "do_account_conflict" },
+              ],
+              leaseId: "do-lease",
+              pending: [],
+              posted: [doPosted],
+              reconcilePostedFrom: "2026-08-25T00:00:00.000Z",
+              syncedAt: "2026-08-27T00:00:00.000Z",
+            },
+          ],
+          name: "saveSnapshot",
+        });
+      }
+    );
+
+    const savedAccount = await Effect.runPromise(
+      store.getAccount(doAccount.id)
+    );
+    const savedTransactions = await Effect.runPromise(
+      store.listTransactions({
+        accountId: doAccount.id,
+        cursor: null,
+        from: null,
+        limit: 100,
+        status: null,
+        to: null,
+      })
+    );
+    expect(reply.ok).toBeFalsy();
+    expect(savedAccount.name).toBe(doAccount.name);
+    expect(savedTransactions.items.map((item) => item["id"])).toStrictEqual([
+      doPosted.id,
+    ]);
   });
 });
