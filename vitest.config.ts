@@ -28,6 +28,7 @@ export default defineConfig({
         // The test pool's bundled workerd trails today's production compatibility date by four days.
         compatibilityDate: "2026-08-22",
         d1Databases: { DB: "bankglass-test" },
+        durableObjects: { BANK_STORE: "BankStoreDO" },
       },
     }),
   ],

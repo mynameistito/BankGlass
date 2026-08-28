@@ -4,15 +4,18 @@ import type { WorkerEnv } from "../alchemy.run";
 import { authenticateAccess } from "./access-auth";
 import { akahuBankProviderLive } from "./akahu-provider";
 import { BankStore } from "./bank-store";
+import { doBankStoreLive } from "./bank-store-do";
 import { parseConfig } from "./config";
-import { d1BankStoreLive } from "./d1-bank-store";
 import { routeRequest } from "./http-api";
 import { routeMcpRequest } from "./mcp-api";
 import { SyncService, syncServiceLive } from "./sync-service";
 
+export { BankStoreDO } from "./bank-store-do";
+
 const programLayer = (env: WorkerEnv, cooldown: number, lookback: number) => {
   const dependencies = Layer.merge(
-    d1BankStoreLive(env.DB),
+    // Alchemy's inferred namespace uses the generic runtime stub shape.
+    doBankStoreLive(env.BANK_STORE),
     akahuBankProviderLive({
       appToken: env.AKAHU_APP_TOKEN,
       baseUrl: env.AKAHU_API_BASE_URL,
