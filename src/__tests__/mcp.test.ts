@@ -4,8 +4,12 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import { makeD1BankStore } from "../d1-bank-store";
-import type { BankAccount, PostedTransaction } from "../domain";
-import { routeMcpRequest } from "../mcp-api";
+import type {
+  BankAccount,
+  PendingTransaction,
+  PostedTransaction,
+} from "../domain";
+import { routeMcpRequest, validateMcpTransactionQuery } from "../mcp-api";
 
 const hostname = "bank.example.test";
 const time = "2026-08-26T00:00:00.000Z";
@@ -53,6 +57,26 @@ const transaction = (id: string, transactionAt: string): PostedTransaction => ({
   type: "EFTPOS",
 });
 
+const pending: PendingTransaction = {
+  accountId: account.id,
+  amount: -3,
+  cardSuffix: null,
+  code: null,
+  currency: "NZD",
+  dataUpdatedAt: time,
+  description: "Pending coffee",
+  id: "pending_test",
+  otherAccount: null,
+  particulars: null,
+  providerId: "provider_pending_test",
+  providerUpdatedAt: time,
+  reference: null,
+  status: "pending",
+  syncedAt: time,
+  transactionAt: "2026-08-25T12:00:00.000Z",
+  type: "EFTPOS",
+};
+
 interface RpcRequest {
   readonly id: number;
   readonly jsonrpc: "2.0";
@@ -64,6 +88,7 @@ interface ToolArguments {
   readonly cursor?: string;
   readonly from?: string;
   readonly limit?: number;
+  readonly status?: "posted" | "pending";
   readonly to?: string;
 }
 const toolResponseSchema = z.object({
@@ -113,7 +138,7 @@ describe("MCP protocol boundary", () => {
       store.saveSnapshot({
         accounts: [account],
         leaseId: "mcp-test",
-        pending: [],
+        pending: [pending],
         posted: [
           transaction("transaction_new", "2026-08-25T00:00:00.000Z"),
           transaction("transaction_old", "2026-08-24T00:00:00.000Z"),
@@ -161,7 +186,10 @@ describe("MCP protocol boundary", () => {
   it("serves all four tools with defaults and filters", async () => {
     const accounts = await callTool(1, "list_accounts");
     expect(accounts.message).toMatchObject({
-      result: { content: [{ text: JSON.stringify([account]) }] },
+      result: {
+        content: [{ text: JSON.stringify([account]) }],
+        structuredContent: { result: [account] },
+      },
     });
 
     const balance = await callTool(2, "get_balance", { accountId: account.id });
@@ -180,6 +208,15 @@ describe("MCP protocol boundary", () => {
             }),
           },
         ],
+        structuredContent: {
+          accountId: account.id,
+          available: 18,
+          currency: "NZD",
+          current: 20,
+          dataUpdatedAt: time,
+          providerRefreshedAt: time,
+          syncedAt: time,
+        },
       },
     });
 
@@ -192,6 +229,10 @@ describe("MCP protocol boundary", () => {
     expect(transactions.message).toMatchObject({
       result: {
         content: [{ text: expect.stringContaining('"nextCursor":"') }],
+        structuredContent: {
+          items: [{ id: "transaction_new" }],
+          nextCursor: expect.any(String),
+        },
       },
     });
 
@@ -199,6 +240,7 @@ describe("MCP protocol boundary", () => {
     expect(status.message).toMatchObject({
       result: {
         content: [{ text: expect.stringContaining('"status":"idle"') }],
+        structuredContent: { status: "idle" },
       },
     });
   });
@@ -222,13 +264,22 @@ describe("MCP protocol boundary", () => {
       },
     });
     expect(firstPage.items[0]?.id).not.toBe("transaction_old");
+
+    const pendingPage = await callTool(3, "list_transactions", {
+      status: "pending",
+    });
+    expect(pendingPage.message).toMatchObject({
+      result: { structuredContent: { items: [{ id: "pending_test" }] } },
+    });
   });
 
   it("returns tool errors for unknown accounts and malformed cursors", async () => {
     const unknown = await callTool(1, "get_balance", { accountId: "missing" });
     expect(unknown.message).toMatchObject({
       result: {
-        content: [{ text: "The requested banking record was not found" }],
+        content: [
+          { text: "Not found: the requested banking record does not exist" },
+        ],
         isError: true,
       },
     });
@@ -236,7 +287,7 @@ describe("MCP protocol boundary", () => {
     const malformed = await callTool(2, "list_transactions", { cursor: "%%%" });
     expect(malformed.message).toMatchObject({
       result: {
-        content: [{ text: "Banking data could not be read" }],
+        content: [{ text: "Invalid request: check the supplied parameters" }],
         isError: true,
       },
     });
@@ -277,5 +328,25 @@ describe("MCP protocol boundary", () => {
     expect(result.response.headers.get("X-Content-Type-Options")).toBe(
       "nosniff"
     );
+  });
+
+  it("rejects invalid transaction ranges and cursor shapes", async () => {
+    const reversed = await Effect.runPromiseExit(
+      validateMcpTransactionQuery({
+        from: "2026-08-28T00:00:00+00:00",
+        to: "2026-08-27T00:00:00+00:00",
+      })
+    );
+    expect(reversed._tag).toBe("Failure");
+
+    const malformed = await callTool(1, "list_transactions", {
+      cursor: btoa(JSON.stringify({ date: 1 })),
+    });
+    expect(malformed.message).toMatchObject({
+      result: {
+        content: [{ text: "Invalid request: check the supplied parameters" }],
+        isError: true,
+      },
+    });
   });
 });
