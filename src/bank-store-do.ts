@@ -27,7 +27,7 @@ type Reply =
       readonly error: string;
       readonly retryAfterSeconds?: number;
     };
-const schema = `CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, provider_id TEXT NOT NULL UNIQUE, institution TEXT NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL, status TEXT NOT NULL, currency TEXT, current_balance REAL, available_balance REAL, formatted_account TEXT, holder_name TEXT, provider_balance_refreshed_at TEXT, provider_transactions_refreshed_at TEXT, data_updated_at TEXT NOT NULL, synced_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS transactions (id TEXT PRIMARY KEY, provider_id TEXT NOT NULL UNIQUE, account_id TEXT NOT NULL, status TEXT NOT NULL, transaction_at TEXT NOT NULL, description TEXT NOT NULL, amount REAL NOT NULL, currency TEXT NOT NULL, type TEXT NOT NULL, balance REAL, merchant_name TEXT, category_name TEXT, particulars TEXT, code TEXT, reference TEXT, other_account TEXT, card_suffix TEXT, provider_created_at TEXT, provider_updated_at TEXT NOT NULL, data_updated_at TEXT NOT NULL, synced_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS sync_state (singleton INTEGER PRIMARY KEY, status TEXT NOT NULL, started_at TEXT, last_attempt_at TEXT, last_success_at TEXT, last_provider_refresh_requested_at TEXT, provider_refreshed_at TEXT, error_code TEXT, error_message TEXT, lease_id TEXT); INSERT OR IGNORE INTO sync_state(singleton,status) VALUES (1,'idle'); CREATE TABLE IF NOT EXISTS rate_limits (bucket TEXT PRIMARY KEY, count INTEGER NOT NULL, expires_at INTEGER NOT NULL);`;
+const schema = `CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, provider_id TEXT NOT NULL UNIQUE, institution TEXT NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL, status TEXT NOT NULL, currency TEXT, current_balance REAL, available_balance REAL, formatted_account TEXT, holder_name TEXT, provider_balance_refreshed_at TEXT, provider_transactions_refreshed_at TEXT, data_updated_at TEXT NOT NULL, synced_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS transactions (id TEXT PRIMARY KEY, provider_id TEXT NOT NULL UNIQUE, account_id TEXT NOT NULL, status TEXT NOT NULL, transaction_at TEXT NOT NULL, description TEXT NOT NULL, amount REAL NOT NULL, currency TEXT NOT NULL, type TEXT NOT NULL, balance REAL, merchant_name TEXT, category_name TEXT, particulars TEXT, code TEXT, reference TEXT, other_account TEXT, card_suffix TEXT, provider_created_at TEXT, provider_updated_at TEXT NOT NULL, data_updated_at TEXT NOT NULL, synced_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS transactions_account_date ON transactions(account_id, transaction_at DESC, id DESC); CREATE INDEX IF NOT EXISTS transactions_date ON transactions(transaction_at DESC, id DESC); CREATE TABLE IF NOT EXISTS sync_state (singleton INTEGER PRIMARY KEY, status TEXT NOT NULL, started_at TEXT, last_attempt_at TEXT, last_success_at TEXT, last_provider_refresh_requested_at TEXT, provider_refreshed_at TEXT, error_code TEXT, error_message TEXT, lease_id TEXT); INSERT OR IGNORE INTO sync_state(singleton,status) VALUES (1,'idle'); CREATE TABLE IF NOT EXISTS rate_limits (bucket TEXT PRIMARY KEY, count INTEGER NOT NULL, expires_at INTEGER NOT NULL);`;
 interface RpcCommand {
   readonly args: readonly unknown[];
   readonly name: string;
@@ -410,6 +410,19 @@ const isStoreStub = (
   value !== null &&
   "command" in value &&
   typeof value.command === "function";
+const isDomainError = (cause: unknown) =>
+  cause instanceof ApiRateLimitError ||
+  cause instanceof DatabaseError ||
+  cause instanceof NotFoundError ||
+  cause instanceof SyncInProgressError;
+const toDatabaseError = (cause: unknown, operation: string): DatabaseError => {
+  if (isDomainError(cause)) {
+    // SAFETY: isDomainError confirms this is an Effect domain error; the cast
+    // keeps the adapter's declared database error surface narrow.
+    return cause as DatabaseError;
+  }
+  return new DatabaseError({ cause, operation });
+};
 const run = <A>(
   stub: StoreStub,
   name: string,
@@ -418,7 +431,7 @@ const run = <A>(
   resultSchema: Schema.Codec<A, unknown, never, never>
 ) =>
   Effect.tryPromise({
-    catch: (cause) => new DatabaseError({ cause, operation }),
+    catch: (cause) => toDatabaseError(cause, operation),
     try: async () => {
       const reply = await stub.command({ args, name });
       if (reply.ok) {
