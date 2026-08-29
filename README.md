@@ -46,6 +46,26 @@ Connected financial institutions
 
 Akahu Personal Apps are intended for one person accessing their own data. Akahu controls institution support, data freshness, and refresh limits; see the [Personal Apps](https://developers.akahu.nz/docs/personal-apps), [supported integrations](https://developers.akahu.nz/docs/integrations), and [data refreshes](https://developers.akahu.nz/docs/data-refreshes) documentation.
 
+## Authenticate Alchemy
+
+Alchemy needs Cloudflare credentials to provision the resources declared in `alchemy.run.ts`. This is separate from the Akahu tokens, Cloudflare Access configuration, and Worker runtime secrets. For local work, authenticate the Alchemy CLI once:
+
+```powershell
+$env:STAGE = "dev"
+bunx --no-install alchemy login
+```
+
+The command opens a browser for Cloudflare OAuth, or lets you configure an API token, and stores the selected credentials in the `default` Alchemy profile at `~/.alchemy/profiles.json`. The `STAGE` variable is required because the stack uses it to choose resource names and whether to create the production domain.
+
+Useful profile commands:
+
+```powershell
+bunx --no-install alchemy profile show
+bunx --no-install alchemy login --configure
+```
+
+Use a separate profile for another Cloudflare account or environment with `--profile <name>` or `ALCHEMY_PROFILE`.
+
 ## Set Up Akahu
 
 1. Create an Akahu profile at [my.akahu.nz](https://my.akahu.nz), enable MFA, and create a Personal App.
@@ -112,16 +132,18 @@ Alchemy receives `.dev.vars` through the `dev` script. The Worker intentionally 
 
 BankGlass includes an Alchemy deployment and a GitHub Actions workflow. Before deploying a fork, replace the repository owner's production hostname in `alchemy.run.ts` and `.github/workflows/deploy.yml` with your own Access-protected hostname.
 
-Set these secrets in your environment or GitHub repository:
+For a local deployment, use the Alchemy profile created above. The Akahu, Access, and Worker configuration values below are still required; Alchemy reads them from the environment while it creates the Worker. `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` are only needed when using non-interactive Cloudflare authentication instead of the local profile.
 
-| Secret                  | Purpose                                      |
-| ----------------------- | -------------------------------------------- |
-| `AKAHU_APP_TOKEN`       | Akahu Personal App ID token                  |
-| `AKAHU_USER_TOKEN`      | Akahu user access token                      |
-| `API_BEARER_TOKEN`      | Additional authentication for `/v1/*` routes |
-| `ACCESS_POLICY_AUD`     | Audience tag of the Access application       |
-| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account used for deployment       |
-| `CLOUDFLARE_API_TOKEN`  | Cloudflare deployment credential             |
+Set these secrets in your environment for a local deployment, or as GitHub repository secrets for the included workflow:
+
+| Secret | Purpose |
+| --- | --- |
+| `AKAHU_APP_TOKEN` | Akahu Personal App ID token |
+| `AKAHU_USER_TOKEN` | Akahu user access token |
+| `API_BEARER_TOKEN` | Additional authentication for `/v1/*` routes |
+| `ACCESS_POLICY_AUD` | Audience tag of the Access application |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account for non-interactive deployment |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare credential for non-interactive deployment |
 
 Set these non-secret values:
 
@@ -141,6 +163,8 @@ For a local production deployment, load the values into the environment and run:
 $env:STAGE = "prod"
 bun run deploy
 ```
+
+For CI, the workflow does not use your local Alchemy profile. It runs non-interactively with `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` configured as GitHub secrets, and passes `--yes` to Alchemy. `CLOUDFLARE_WORKERS_SUBDOMAIN` is also required when preview deployments are enabled.
 
 The included deployment workflow deploys `main` after CI succeeds and creates previews for same-repository pull requests. After the first deployment:
 
