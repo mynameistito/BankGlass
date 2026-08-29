@@ -1,0 +1,19 @@
+type: http_request
+model: http_request
+id: req_pending
+workspaceId: wk_bankglass
+folderId: fl_transactions
+authentication: {}
+authenticationType: null
+body: {}
+bodyType: null
+description: ""
+headers: []
+method: GET
+name: List account pending transactions
+url: ${[ base_url ]}/v1/accounts/:account_id/pending
+urlParameters:
+  - enabled: true
+    name: limit
+    value: "50"
+    id: null
