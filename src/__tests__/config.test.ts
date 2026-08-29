@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { parseConfig } from "../config";
+import { parseConfig } from "@/config";
 
 const validEnv = {
   ACCESS_APP_HOSTNAME: "bank.example.test",

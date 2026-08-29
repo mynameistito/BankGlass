@@ -2,9 +2,9 @@ import { env } from "cloudflare:test";
 import { Effect } from "effect";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { BankStore } from "../bank-store";
-import { doBankStoreLive, isStoreStub } from "../bank-store-do";
-import type { BankAccount, PostedTransaction } from "../domain";
+import { BankStore } from "@/bank-store";
+import { doBankStoreLive, isStoreStub } from "@/bank-store-do";
+import type { BankAccount, PostedTransaction } from "@/domain";
 
 const time = "2026-08-26T00:00:00.000Z";
 const account: BankAccount = {

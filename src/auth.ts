@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 
-import { UnauthorizedApiRequestError } from "./errors";
+import { UnauthorizedApiRequestError } from "@/errors";
 
 const bearer = /^Bearer (?<token>[A-Za-z0-9._~-]+)$/u;
 

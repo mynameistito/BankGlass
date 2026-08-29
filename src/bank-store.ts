@@ -8,13 +8,13 @@ import type {
   SyncStatus,
   TransactionPage,
   TransactionQuery,
-} from "./domain";
+} from "@/domain";
 import type {
   ApiRateLimitError,
   DatabaseError,
   NotFoundError,
   SyncInProgressError,
-} from "./errors";
+} from "@/errors";
 
 /** Persistence operations for normalized banking data and synchronization state. */
 export interface BankStoreService {

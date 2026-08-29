@@ -1,4 +1,4 @@
-import type { WorkerEnv } from "../alchemy.run";
+import type { WorkerEnv } from "@/alchemy.run";
 
 interface WorkerModule {
   default: {

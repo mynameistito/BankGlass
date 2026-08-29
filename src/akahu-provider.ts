@@ -1,18 +1,18 @@
 import { Effect, Layer, Result, Schedule, Schema } from "effect";
 
-import { BankProvider } from "./bank-provider";
-import type { BankProviderError } from "./bank-provider";
+import { BankProvider } from "@/bank-provider";
+import type { BankProviderError } from "@/bank-provider";
 import type {
   BankAccount,
   PendingTransaction,
   PostedTransaction,
-} from "./domain";
+} from "@/domain";
 import {
   AuthenticationError,
   InvalidProviderResponseError,
   ProviderRateLimitError,
   ProviderUnavailableError,
-} from "./errors";
+} from "@/errors";
 
 const DateTime = Schema.String.pipe(
   Schema.check(

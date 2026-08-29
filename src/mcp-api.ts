@@ -3,8 +3,8 @@ import { createMcpHandler } from "agents/mcp/server";
 import { Effect, Schema } from "effect";
 import { z } from "zod";
 
-import type { BankStoreService } from "./bank-store";
-import { InvalidRequestError } from "./errors";
+import type { BankStoreService } from "@/bank-store";
+import { InvalidRequestError } from "@/errors";
 
 const readOnlyAnnotations = {
   destructiveHint: false,

@@ -13,6 +13,10 @@
     ],
 
     // Bundler mode
+    "paths": {
+      "@/*": ["./src/*"],
+      "@/alchemy.run": ["./alchemy.run.ts"]
+    },
     "moduleResolution": "bundler",
     "verbatimModuleSyntax": true,
     "noEmit": true,

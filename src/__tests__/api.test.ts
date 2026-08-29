@@ -2,13 +2,16 @@ import { env, exports } from "cloudflare:workers";
 import { Effect } from "effect";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { BankStore } from "../bank-store";
-import { doBankStoreLive, isStoreStub } from "../bank-store-do";
-import type { RuntimeConfig } from "../config";
-import { routeRequest } from "../http-api";
-import { routeMcpRequest } from "../mcp-api";
-import { SyncService } from "../sync-service";
-import { fetchAccessJwks, makeAccessAssertion } from "./access-fixture";
+import {
+  fetchAccessJwks,
+  makeAccessAssertion,
+} from "@/__tests__/access-fixture";
+import { BankStore } from "@/bank-store";
+import { doBankStoreLive, isStoreStub } from "@/bank-store-do";
+import type { RuntimeConfig } from "@/config";
+import { routeRequest } from "@/http-api";
+import { routeMcpRequest } from "@/mcp-api";
+import { SyncService } from "@/sync-service";
 
 const headers = { Authorization: "Bearer test-api-bearer-token" };
 const config = {

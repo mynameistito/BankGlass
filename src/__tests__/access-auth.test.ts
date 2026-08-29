@@ -1,9 +1,12 @@
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { authenticateAccess } from "../access-auth";
-import type { RuntimeConfig } from "../config";
-import { fetchAccessJwks, makeAccessAssertion } from "./access-fixture";
+import {
+  fetchAccessJwks,
+  makeAccessAssertion,
+} from "@/__tests__/access-fixture";
+import { authenticateAccess } from "@/access-auth";
+import type { RuntimeConfig } from "@/config";
 
 const config = {
   accessAppHostname: "bank.example.test",

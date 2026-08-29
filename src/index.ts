@@ -1,17 +1,17 @@
 import { Effect, Layer, Result } from "effect";
 
-import type { WorkerEnv } from "../alchemy.run";
-import { authenticateAccess } from "./access-auth";
-import { akahuBankProviderLive } from "./akahu-provider";
-import { BankStore } from "./bank-store";
-import { doBankStoreLive } from "./bank-store-do";
-import { parseConfig } from "./config";
-import { routeRequest } from "./http-api";
-import { routeMcpRequest } from "./mcp-api";
-import { SyncService, syncServiceLive } from "./sync-service";
+import { authenticateAccess } from "@/access-auth";
+import { akahuBankProviderLive } from "@/akahu-provider";
+import type { WorkerEnv } from "@/alchemy.run";
+import { BankStore } from "@/bank-store";
+import { doBankStoreLive } from "@/bank-store-do";
+import { parseConfig } from "@/config";
+import { routeRequest } from "@/http-api";
+import { routeMcpRequest } from "@/mcp-api";
+import { SyncService, syncServiceLive } from "@/sync-service";
 
 /** Durable Object class exported for the Worker binding. */
-export { BankStoreDO } from "./bank-store-do";
+export { BankStoreDO } from "@/bank-store-do";
 
 const programLayer = (env: WorkerEnv, cooldown: number, lookback: number) => {
   const dependencies = Layer.merge(
