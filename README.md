@@ -112,10 +112,10 @@ SYNC_LOOKBACK_DAYS=14
 API_RATE_LIMIT_PER_MINUTE=60
 ```
 
-Generate the REST bearer token in PowerShell:
+Generate the REST bearer token with Bun:
 
-```powershell
-[Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).ToLowerInvariant()
+```bash
+bun -e 'console.log([...crypto.getRandomValues(new Uint8Array(32))].map((byte) => byte.toString(16).padStart(2, "0")).join(""))'
 ```
 
 Start the local Worker:
@@ -130,7 +130,7 @@ Alchemy receives `.dev.vars` through the `dev` script. The Worker intentionally 
 
 ## Deploy
 
-BankGlass includes an Alchemy deployment and a GitHub Actions workflow. Before deploying a fork, replace the repository owner's production hostname in `alchemy.run.ts` and `.github/workflows/deploy.yml` with your own Access-protected hostname.
+BankGlass includes an Alchemy deployment and a GitHub Actions workflow. Before deploying a fork, replace the repository owner's production hostname in [`alchemy.run.ts`](alchemy.run.ts) and [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) with your own Access-protected hostname. 
 
 For a local deployment, use the Alchemy profile created above. The Akahu, Access, and Worker configuration values below are still required; Alchemy reads them from the environment while it creates the Worker. `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` are only needed when using non-interactive Cloudflare authentication instead of the local profile.
 
@@ -277,6 +277,17 @@ bun run check
 ```
 
 Tests run in workerd against local Worker bindings and do not require an Akahu account. They cover Access JWT validation, REST and MCP boundaries, provider decoding and retry behavior, synchronization, persistence, pagination, rate limits, cooldowns, and security headers.
+
+## Relevant Documentation
+
+- [Akahu API](https://developers.akahu.nz/), including [Personal Apps](https://developers.akahu.nz/docs/personal-apps), [integrations](https://developers.akahu.nz/docs/integrations), and [data refreshes](https://developers.akahu.nz/docs/data-refreshes)
+- [Cloudflare Workers](https://developers.cloudflare.com/workers/)
+- [Cloudflare Durable Objects](https://developers.cloudflare.com/durable-objects/)
+- [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/applications/configure-apps/)
+- [Alchemy](https://alchemy.run/docs)
+- [Effect](https://effect.website/docs/)
+- [Model Context Protocol](https://modelcontextprotocol.io/docs/)
+- [Bun](https://bun.sh/docs)
 
 ## License
 
