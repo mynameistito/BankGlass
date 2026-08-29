@@ -1,7 +1,31 @@
 {
   "name": "bankglass",
+  "version": "0.1.0",
   "private": true,
+  "description": "A self-hosted, read-only REST API and Model Context Protocol server for Akahu-connected accounts.",
+  "keywords": [
+    "akahu",
+    "banking",
+    "cloudflare-workers",
+    "durable-objects",
+    "mcp",
+    "model-context-protocol",
+    "read-only",
+    "rest-api"
+  ],
+  "homepage": "https://github.com/mynameistito/bankglass#readme",
+  "bugs": {
+    "url": "https://github.com/mynameistito/bankglass/issues"
+  },
   "license": "MIT",
+  "author": {
+    "name": "mynameistito",
+    "url": "https://github.com/mynameistito"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mynameistito/bankglass.git"
+  },
   "type": "module",
   "module": "src/index.ts",
   "scripts": {
