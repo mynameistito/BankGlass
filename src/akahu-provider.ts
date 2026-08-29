@@ -96,10 +96,15 @@ type ProviderPayload = typeof ProviderPayloadSchema.Type;
 const maxTransactionPages = 100;
 const maxPostedTransactions = 750;
 
+/** Credentials and transport options for the Akahu Personal App API. */
 export interface AkahuConfig {
+  /** Akahu API origin and version prefix. */
   readonly baseUrl: string;
+  /** Personal App ID token. */
   readonly appToken: string;
+  /** User access token for the Personal App. */
   readonly userToken: string;
+  /** Per-request timeout; defaults to ten seconds. */
   readonly requestTimeoutMs?: number;
 }
 
@@ -123,6 +128,13 @@ const decode = <A>(
     return result.success;
   });
 
+/**
+ * Decode Akahu account payloads into normalized BankGlass accounts.
+ *
+ * @param input - Untrusted payload returned by Akahu.
+ * @param now - ISO timestamp assigned to the normalized records.
+ * @returns An effect containing normalized accounts or a provider response error.
+ */
 export const decodeAkahuAccounts = (input: ProviderPayload, now: string) =>
   decode(AccountsResponse, "getAccounts", input).pipe(
     Effect.map((response) =>
@@ -205,6 +217,14 @@ const parseResponse = (
   });
 };
 
+/**
+ * Construct an Akahu-backed bank provider.
+ *
+ * @param config - Akahu credentials and request settings.
+ * @param fetchImplementation - Fetch function, injectable for tests.
+ * @returns A `BankProvider` implementation that translates Akahu responses into
+ * normalized domain records and typed provider errors.
+ */
 export const makeAkahuBankProvider = (
   config: AkahuConfig,
   fetchImplementation: typeof fetch = fetch
@@ -396,5 +416,6 @@ export const makeAkahuBankProvider = (
   });
 };
 
+/** Provide an Akahu-backed `BankProvider` as an Effect layer. */
 export const akahuBankProviderLive = (config: AkahuConfig) =>
   Layer.succeed(BankProvider, makeAkahuBankProvider(config));

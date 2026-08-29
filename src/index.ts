@@ -10,6 +10,7 @@ import { routeRequest } from "./http-api";
 import { routeMcpRequest } from "./mcp-api";
 import { SyncService, syncServiceLive } from "./sync-service";
 
+/** Durable Object class exported for the Worker binding. */
 export { BankStoreDO } from "./bank-store-do";
 
 const programLayer = (env: WorkerEnv, cooldown: number, lookback: number) => {
@@ -145,8 +146,10 @@ const run = (request: Request, env: WorkerEnv) =>
   );
 
 export default {
+  /** Handle an authenticated HTTP or MCP request. */
   fetch: (request: Request, env: WorkerEnv) =>
     Effect.runPromise(run(request, env)),
+  /** Run the scheduled daily synchronization in the background. */
   scheduled: (
     _controller: ScheduledController,
     env: WorkerEnv,

@@ -65,6 +65,7 @@ const RuntimeConfigSchema = Schema.Struct({
   refreshCooldownSeconds: PositiveIntegerString,
   syncLookbackDays: PositiveIntegerString,
 });
+/** Parsed configuration required by the Worker, including sensitive credentials such as API tokens. */
 export type RuntimeConfig = typeof RuntimeConfigSchema.Type;
 
 interface ConfigEnv {
@@ -80,6 +81,13 @@ interface ConfigEnv {
   readonly SYNC_LOOKBACK_DAYS: string;
 }
 
+/**
+ * Parse and normalize Worker environment variables.
+ *
+ * @param env - Environment variables supplied by the Worker runtime.
+ * @returns An Effect containing validated runtime configuration or an
+ * `InvalidRequestError` when required configuration is missing or malformed.
+ */
 export const parseConfig = (env: ConfigEnv) =>
   Schema.decodeUnknownEffect(RuntimeConfigSchema)({
     accessAppHostname: env.ACCESS_APP_HOSTNAME,

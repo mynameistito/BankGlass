@@ -118,6 +118,13 @@ const validateCursor = (cursor: string) =>
     try: () => Schema.decodeUnknownSync(CursorSchema)(JSON.parse(atob(cursor))),
   }).pipe(Effect.asVoid);
 
+/**
+ * Validate cursor and date ordering for MCP transaction queries.
+ *
+ * @param input - Optional query values supplied by an MCP client.
+ * @returns An effect that succeeds for a well-formed query or fails with
+ * `InvalidRequestError`.
+ */
 export const validateMcpTransactionQuery = (input: {
   readonly cursor?: string | undefined;
   readonly from?: string | undefined;
@@ -238,7 +245,14 @@ const createServer = (store: BankStoreService) => {
   return server;
 };
 
-/** Handle one stateless Streamable HTTP MCP request. */
+/**
+ * Handle one stateless Streamable HTTP MCP request.
+ *
+ * @param request - Incoming MCP HTTP request.
+ * @param store - Store implementation used by the registered read-only tools.
+ * @param accessAppHostname - Hostname allowed by the MCP transport.
+ * @returns The MCP protocol response with security headers applied.
+ */
 export const routeMcpRequest = (
   request: Request,
   store: BankStoreService,

@@ -1,5 +1,11 @@
 import { Data } from "effect";
 
+/** Indicates a provider request failure. */
 export class ProviderUnavailableError extends Data.TaggedError(
   "ProviderUnavailableError"
-)<{ readonly operation: string; readonly cause: unknown }> {}
+)<{
+  /** Provider operation that failed. */
+  readonly operation: string;
+  /** Underlying failure, retained for diagnostics. */
+  readonly cause: unknown;
+}> {}
