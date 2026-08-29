@@ -1,10 +1,5 @@
-import {
-  cloudflareTest,
-  readD1Migrations,
-} from "@cloudflare/vitest-pool-workers";
+import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
 import { defineConfig } from "vitest/config";
-
-const migrations = await readD1Migrations("./migrations");
 
 export default defineConfig({
   plugins: [
@@ -23,18 +18,13 @@ export default defineConfig({
           API_RATE_LIMIT_PER_MINUTE: "60",
           REFRESH_COOLDOWN_SECONDS: "3600",
           SYNC_LOOKBACK_DAYS: "14",
-          TEST_MIGRATIONS: migrations,
         },
         // The test pool's bundled workerd trails today's production compatibility date by four days.
         compatibilityDate: "2026-08-22",
-        d1Databases: { DB: "bankglass-test" },
         durableObjects: {
           BANK_STORE: { className: "BankStoreDO", useSQLite: true },
         },
       },
     }),
   ],
-  test: {
-    setupFiles: ["./src/__tests__/setup.ts"],
-  },
 });

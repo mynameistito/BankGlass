@@ -3,7 +3,8 @@ import { Effect } from "effect";
 import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { makeD1BankStore } from "../d1-bank-store";
+import { BankStore } from "../bank-store";
+import { doBankStoreLive, isStoreStub } from "../bank-store-do";
 import type {
   BankAccount,
   PendingTransaction,
@@ -13,7 +14,17 @@ import { routeMcpRequest, validateMcpTransactionQuery } from "../mcp-api";
 
 const hostname = "bank.example.test";
 const time = "2026-08-26T00:00:00.000Z";
-const store = makeD1BankStore(env.DB);
+const getStore = () =>
+  Effect.runPromise(
+    BankStore.pipe(Effect.provide(doBankStoreLive(env.BANK_STORE)))
+  );
+const resetStore = async () => {
+  const stub = env.BANK_STORE.getByName("bankglass");
+  if (!isStoreStub(stub)) {
+    throw new TypeError("BANK_STORE does not expose the command RPC");
+  }
+  await stub.command({ args: [], name: "reset" });
+};
 
 const account: BankAccount = {
   availableBalance: 18,
@@ -110,7 +121,7 @@ const request = (message: RpcRequest, headers: Record<string, string> = {}) =>
 const send = async (message: RpcRequest, headers?: Record<string, string>) => {
   const response = await routeMcpRequest(
     request(message, headers),
-    store,
+    await getStore(),
     hostname
   );
   const body = await response.text();
@@ -128,11 +139,8 @@ const callTool = (id: number, name: string, args: ToolArguments = {}) =>
 
 describe("MCP protocol boundary", () => {
   beforeEach(async () => {
-    await env.DB.batch([
-      env.DB.prepare("DELETE FROM transactions"),
-      env.DB.prepare("DELETE FROM accounts"),
-      env.DB.prepare("DELETE FROM rate_limits"),
-    ]);
+    await resetStore();
+    const store = await getStore();
     await Effect.runPromise(store.acquireSync(time, "mcp-test", null));
     await Effect.runPromise(
       store.saveSnapshot({
@@ -147,9 +155,7 @@ describe("MCP protocol boundary", () => {
         syncedAt: time,
       })
     );
-    await env.DB.prepare(
-      "UPDATE sync_state SET status='idle',started_at=NULL,lease_id=NULL"
-    ).run();
+    await Effect.runPromise(store.completeSync(time, null, "mcp-test"));
   });
 
   it("initializes and lists all read-only tools", async () => {
@@ -301,6 +307,7 @@ describe("MCP protocol boundary", () => {
       result: {},
     });
 
+    const store = await getStore();
     const hostileHost = await routeMcpRequest(
       request(
         { id: 2, jsonrpc: "2.0", method: "tools/list" },
