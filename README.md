@@ -52,7 +52,7 @@ Alchemy needs Cloudflare credentials to provision the resources declared in `alc
 
 ```powershell
 $env:STAGE = "dev"
-bunx --no-install alchemy login
+bun alchemy login
 ```
 
 The command opens a browser for Cloudflare OAuth, or lets you configure an API token, and stores the selected credentials in the `default` Alchemy profile at `~/.alchemy/profiles.json`. The `STAGE` variable is required because the stack uses it to choose resource names and whether to create the production domain.
@@ -103,7 +103,7 @@ Fill in `.dev.vars`:
 AKAHU_APP_TOKEN=replace-me
 AKAHU_USER_TOKEN=replace-me
 API_BEARER_TOKEN=replace-with-a-random-32-byte-token
-ACCESS_APP_HOSTNAME=bank.example.com
+ACCESS_APP_HOSTNAME=domain.tld
 ACCESS_POLICY_AUD=replace-with-access-application-aud
 ACCESS_TEAM_DOMAIN=https://your-team.cloudflareaccess.com
 AKAHU_API_BASE_URL=https://api.akahu.io/v1
@@ -149,7 +149,7 @@ Set these non-secret values:
 
 | Variable | Example | Default |
 | --- | --- | --- |
-| `ACCESS_APP_HOSTNAME` | `bank.example.com` | Required |
+| `ACCESS_APP_HOSTNAME` | `domain.tld` | Required |
 | `ACCESS_TEAM_DOMAIN` | `https://example.cloudflareaccess.com` | Required |
 | `AKAHU_API_BASE_URL` | `https://api.akahu.io/v1` | Shown value |
 | `API_RATE_LIMIT_PER_MINUTE` | `60` | `60` |
@@ -193,7 +193,7 @@ Transaction routes accept `from`, `to`, `limit`, and `cursor`. Dates must be ISO
 Example for an unattended client:
 
 ```sh
-curl "https://bank.example.com/v1/accounts" \
+curl "https://domain.tld/v1/accounts" \
   --header "Authorization: Bearer <API_BEARER_TOKEN>" \
   --header "CF-Access-Client-Id: <CF_ACCESS_CLIENT_ID>" \
   --header "CF-Access-Client-Secret: <CF_ACCESS_CLIENT_SECRET>"
@@ -203,7 +203,7 @@ An importable request collection is available at `insomnia/BankGlass.insomnia.js
 
 ## MCP Server
 
-The stateless Streamable HTTP endpoint is `https://bank.example.com/mcp`. It provides four read-only tools:
+The stateless Streamable HTTP endpoint is `https://domain.tld/mcp`. It provides four read-only tools:
 
 | Tool | Description |
 | --- | --- |
@@ -220,7 +220,7 @@ Interactive clients that support remote OAuth can use:
 {
   "mcpServers": {
     "bankglass": {
-      "url": "https://bank.example.com/mcp"
+      "url": "https://domain.tld/mcp"
     }
   }
 }
@@ -232,7 +232,7 @@ For an unattended client that supports custom transport headers, use a Cloudflar
 {
   "mcpServers": {
     "bankglass": {
-      "url": "https://bank.example.com/mcp",
+      "url": "https://domain.tld/mcp",
       "headers": {
         "CF-Access-Client-Id": "${CF_ACCESS_CLIENT_ID}",
         "CF-Access-Client-Secret": "${CF_ACCESS_CLIENT_SECRET}"
