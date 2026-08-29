@@ -1,6 +1,6 @@
 import { env, exports } from "cloudflare:workers";
 import { Effect } from "effect";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BankStore } from "../bank-store";
 import type { RuntimeConfig } from "../config";
@@ -8,6 +8,7 @@ import { d1BankStoreLive } from "../d1-bank-store";
 import { routeRequest } from "../http-api";
 import { routeMcpRequest } from "../mcp-api";
 import { SyncService } from "../sync-service";
+import { fetchAccessJwks, makeAccessAssertion } from "./access-fixture";
 
 const headers = { Authorization: "Bearer test-api-bearer-token" };
 const config = {
@@ -148,5 +149,38 @@ describe("Cloudflare HTTP boundary", () => {
         serverInfo: { name: "bankglass", version: "1.0.0" },
       },
     });
+  });
+
+  it("rate-limits MCP requests at the Worker entrypoint", async () => {
+    const assertion = await makeAccessAssertion();
+    const fetchJwks = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(fetchAccessJwks);
+    try {
+      const requests = Array.from({ length: 61 }, () =>
+        exports.default.fetch(
+          new Request("https://replace-with-custom-hostname/mcp", {
+            body: JSON.stringify({
+              id: 1,
+              jsonrpc: "2.0",
+              method: "tools/list",
+            }),
+            headers: {
+              Accept: "application/json, text/event-stream",
+              "Cf-Access-Jwt-Assertion": assertion,
+              "Content-Type": "application/json",
+              Host: "replace-with-custom-hostname",
+            },
+            method: "POST",
+          })
+        )
+      );
+      const responses = await Promise.all(requests);
+      const limited = responses.find((response) => response.status === 429);
+      expect(limited?.status).toBe(429);
+      expect(limited?.headers.get("Retry-After")).toBeTruthy();
+    } finally {
+      fetchJwks.mockRestore();
+    }
   });
 });
