@@ -4,8 +4,7 @@ BankGlass is a self-hosted, read-only API and [Model Context Protocol (MCP)](htt
 
 It periodically copies account, balance, and transaction data from Akahu into a Cloudflare Durable Object, then makes the cached data available to trusted applications and AI agents. It cannot make payments or modify bank accounts.
 
-> [!IMPORTANT]
-> BankGlass is a personal, single-user service. It is not a multi-user banking product and is not affiliated with Akahu or any financial institution.
+> [!IMPORTANT] BankGlass is a personal, single-user service. It is not a multi-user banking product and is not affiliated with Akahu or any financial institution.
 
 ## What It Does
 
@@ -131,7 +130,7 @@ Alchemy receives `.dev.vars` through the `dev` script. The Worker intentionally 
 
 ## Deploy
 
-BankGlass includes an Alchemy deployment and a GitHub Actions workflow. Before deploying a fork, replace the repository owner's production hostname in [`alchemy.run.ts`](alchemy.run.ts) and [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) with your own Access-protected hostname. 
+BankGlass includes an Alchemy deployment and a GitHub Actions workflow. Before deploying a fork, replace the repository owner's production hostname in [`alchemy.run.ts`](alchemy.run.ts) and [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) with your own Access-protected hostname.
 
 For a local deployment, use the Alchemy profile created above. The Akahu, Access, and Worker configuration values below are still required; Alchemy reads them from the environment while it creates the Worker. `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` are only needed when using non-interactive Cloudflare authentication instead of the local profile.
 
