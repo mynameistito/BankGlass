@@ -1,9 +1,10 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { createMcpHandler } from "agents/mcp/server";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { z } from "zod";
 
 import type { BankStoreService } from "./bank-store";
+import { InvalidRequestError } from "./errors";
 
 const readOnlyAnnotations = {
   destructiveHint: false,
@@ -71,10 +72,28 @@ const successfulToolResult = <Data>(data: Data) => ({
 const failedToolResult = (errorTag: string) => ({
   content: [
     {
-      text:
-        errorTag === "NotFoundError"
-          ? "The requested banking record was not found"
-          : "Banking data could not be read",
+      text: (() => {
+        switch (errorTag) {
+          case "InvalidRequestError": {
+            return "Invalid request: check the supplied parameters";
+          }
+          case "NotFoundError": {
+            return "Not found: the requested banking record does not exist";
+          }
+          case "ApiRateLimitError":
+          case "ProviderRateLimitError": {
+            return "Rate limited: retry later";
+          }
+          case "AuthenticationError":
+          case "InvalidProviderResponseError":
+          case "ProviderUnavailableError": {
+            return "Unavailable: banking data is temporarily unavailable; retry later";
+          }
+          default: {
+            return "Internal error: banking data could not be read";
+          }
+        }
+      })(),
       type: "text" as const,
     },
   ],
@@ -90,6 +109,34 @@ const runTool = <Value, Failure extends { readonly _tag: string }>(
       onSuccess: successfulToolResult,
     })
   );
+
+const CursorSchema = Schema.Struct({ date: Schema.String, id: Schema.String });
+
+const validateCursor = (cursor: string) =>
+  Effect.try({
+    catch: () => new InvalidRequestError({ message: "cursor is invalid" }),
+    try: () => Schema.decodeUnknownSync(CursorSchema)(JSON.parse(atob(cursor))),
+  }).pipe(Effect.asVoid);
+
+export const validateMcpTransactionQuery = (input: {
+  readonly cursor?: string | undefined;
+  readonly from?: string | undefined;
+  readonly to?: string | undefined;
+}) =>
+  Effect.gen(function* validateMcpQuery() {
+    if (
+      input.from !== undefined &&
+      input.to !== undefined &&
+      new Date(input.from).getTime() > new Date(input.to).getTime()
+    ) {
+      yield* Effect.fail(
+        new InvalidRequestError({ message: "from must not be later than to" })
+      );
+    }
+    if (input.cursor !== undefined) {
+      yield* validateCursor(input.cursor);
+    }
+  });
 
 const createServer = (store: BankStoreService) => {
   const server = new McpServer({
@@ -161,14 +208,18 @@ const createServer = (store: BankStoreService) => {
     },
     ({ accountId, cursor, from, limit, status, to }) =>
       runTool(
-        store.listTransactions({
-          accountId: accountId ?? null,
-          cursor: cursor ?? null,
-          from: from === undefined ? null : new Date(from).toISOString(),
-          limit,
-          status,
-          to: to === undefined ? null : new Date(to).toISOString(),
-        })
+        validateMcpTransactionQuery({ cursor, from, to }).pipe(
+          Effect.andThen(() =>
+            store.listTransactions({
+              accountId: accountId ?? null,
+              cursor: cursor ?? null,
+              from: from === undefined ? null : new Date(from).toISOString(),
+              limit,
+              status,
+              to: to === undefined ? null : new Date(to).toISOString(),
+            })
+          )
+        )
       )
   );
 
