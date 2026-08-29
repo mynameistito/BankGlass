@@ -1,8 +1,8 @@
-AKAHU_APP_TOKEN=
-AKAHU_USER_TOKEN=
-API_BEARER_TOKEN= # [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).ToLowerInvariant()
+AKAHU_APP_TOKEN= # https://my.akahu.nz/developers
+AKAHU_USER_TOKEN= # https://my.akahu.nz/developers
+API_BEARER_TOKEN= # bun -e 'console.log([...crypto.getRandomValues(new Uint8Array(32))].map((byte) => byte.toString(16).padStart(2, "0")).join(""))'
 ACCESS_APP_HOSTNAME=bank.example.com
-ACCESS_POLICY_AUD=
+ACCESS_POLICY_AUD= # https://dash.cloudflare.com/one/
 ACCESS_TEAM_DOMAIN=https://your-team.cloudflareaccess.com
 AKAHU_API_BASE_URL=https://api.akahu.io/v1
 REFRESH_COOLDOWN_SECONDS=3600
