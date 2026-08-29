@@ -48,7 +48,7 @@ Akahu Personal Apps are intended for one person accessing their own data. Akahu 
 
 ## Authenticate Alchemy
 
-Alchemy needs Cloudflare credentials to provision the resources declared in `alchemy.run.ts`. This is separate from the Akahu tokens, Cloudflare Access configuration, and Worker runtime secrets. For local work, authenticate the Alchemy CLI once:
+Alchemy needs Cloudflare credentials to provision the resources declared in [`alchemy.run.ts`](alchemy.run.ts). This is separate from the Akahu tokens, Cloudflare Access configuration, and Worker runtime secrets. For local work, authenticate the Alchemy CLI once:
 
 ```powershell
 $env:STAGE = "dev"
