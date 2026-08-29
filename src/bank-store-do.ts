@@ -1,19 +1,19 @@
 import { DurableObject } from "cloudflare:workers";
 import { Effect, Layer, Schema } from "effect";
 
-import { BankStore } from "./bank-store";
-import type { BankAccount, SyncStatus } from "./domain";
+import { BankStore } from "@/bank-store";
+import type { BankAccount, SyncStatus } from "@/domain";
 import {
   BankAccountSchema,
   PendingTransactionSchema,
   PostedTransactionSchema,
-} from "./domain";
+} from "@/domain";
 import {
   ApiRateLimitError,
   DatabaseError,
   NotFoundError,
   SyncInProgressError,
-} from "./errors";
+} from "@/errors";
 
 type Reply =
   | { readonly ok: true; readonly value?: unknown }

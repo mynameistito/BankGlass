@@ -5,13 +5,13 @@ import type {
   BankAccount,
   PendingTransaction,
   PostedTransaction,
-} from "./domain";
+} from "@/domain";
 import type {
   AuthenticationError,
   InvalidProviderResponseError,
   ProviderRateLimitError,
   ProviderUnavailableError,
-} from "./errors";
+} from "@/errors";
 
 /** Failures that can occur while reading from or refreshing the bank provider. */
 export type BankProviderError =

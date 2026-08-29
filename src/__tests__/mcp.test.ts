@@ -3,14 +3,14 @@ import { Effect } from "effect";
 import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { BankStore } from "../bank-store";
-import { doBankStoreLive, isStoreStub } from "../bank-store-do";
+import { BankStore } from "@/bank-store";
+import { doBankStoreLive, isStoreStub } from "@/bank-store-do";
 import type {
   BankAccount,
   PendingTransaction,
   PostedTransaction,
-} from "../domain";
-import { routeMcpRequest, validateMcpTransactionQuery } from "../mcp-api";
+} from "@/domain";
+import { routeMcpRequest, validateMcpTransactionQuery } from "@/mcp-api";
 
 const hostname = "bank.example.test";
 const time = "2026-08-26T00:00:00.000Z";

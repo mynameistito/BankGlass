@@ -1,10 +1,10 @@
 import { Context, Effect, Layer, Result } from "effect";
 
-import { BankProvider } from "./bank-provider";
-import type { BankProviderError } from "./bank-provider";
-import { BankStore } from "./bank-store";
-import { RefreshCooldownError } from "./errors";
-import type { DatabaseError, SyncInProgressError } from "./errors";
+import { BankProvider } from "@/bank-provider";
+import type { BankProviderError } from "@/bank-provider";
+import { BankStore } from "@/bank-store";
+import { RefreshCooldownError } from "@/errors";
+import type { DatabaseError, SyncInProgressError } from "@/errors";
 
 /** Failures that can prevent a synchronization from completing. */
 export type SyncError =

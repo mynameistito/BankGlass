@@ -1,10 +1,10 @@
 import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { BankProvider } from "../bank-provider";
-import { BankStore } from "../bank-store";
-import { SyncInProgressError } from "../errors";
-import { makeSyncService } from "../sync-service";
+import { BankProvider } from "@/bank-provider";
+import { BankStore } from "@/bank-store";
+import { SyncInProgressError } from "@/errors";
+import { makeSyncService } from "@/sync-service";
 
 describe("synchronization policy", () => {
   it("rejects a refresh inside the Personal App one-hour cooldown", async () => {

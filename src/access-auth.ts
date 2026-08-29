@@ -1,8 +1,8 @@
 import { Effect } from "effect";
 import { createRemoteJWKSet, customFetch, jwtVerify } from "jose";
 
-import type { RuntimeConfig } from "./config";
-import { UnauthorizedAccessRequestError } from "./errors";
+import type { RuntimeConfig } from "@/config";
+import { UnauthorizedAccessRequestError } from "@/errors";
 
 type AccessJwks = ReturnType<typeof createRemoteJWKSet>;
 const jwksCache = new WeakMap<typeof fetch, Map<string, AccessJwks>>();

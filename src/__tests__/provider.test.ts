@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { decodeAkahuAccounts, makeAkahuBankProvider } from "../akahu-provider";
+import { decodeAkahuAccounts, makeAkahuBankProvider } from "@/akahu-provider";
 
 const now = "2026-08-26T00:00:00.000Z";
 describe("Akahu provider boundary", () => {

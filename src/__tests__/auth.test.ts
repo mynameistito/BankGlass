@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { authenticate } from "../auth";
+import { authenticate } from "@/auth";
 
 describe("API authentication", () => {
   it("accepts the configured bearer token", async () => {

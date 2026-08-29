@@ -1,13 +1,13 @@
 import { Effect, Result, Schema } from "effect";
 import { z } from "zod";
 
-import { authenticate } from "./auth";
-import { BankStore } from "./bank-store";
-import type { BankStoreService } from "./bank-store";
-import type { RuntimeConfig } from "./config";
-import type { TransactionQuery } from "./domain";
-import { InvalidRequestError } from "./errors";
-import { SyncService } from "./sync-service";
+import { authenticate } from "@/auth";
+import { BankStore } from "@/bank-store";
+import type { BankStoreService } from "@/bank-store";
+import type { RuntimeConfig } from "@/config";
+import type { TransactionQuery } from "@/domain";
+import { InvalidRequestError } from "@/errors";
+import { SyncService } from "@/sync-service";
 
 type JsonValue = Parameters<typeof Response.json>[0];
 const CursorSchema = Schema.Struct({ date: Schema.String, id: Schema.String });

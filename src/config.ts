@@ -1,6 +1,6 @@
 import { Effect, Schema } from "effect";
 
-import { InvalidRequestError } from "./errors";
+import { InvalidRequestError } from "@/errors";
 
 const PositiveIntegerString = Schema.String.pipe(
   Schema.check(

@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+
 import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
 import { defineConfig } from "vitest/config";
 
@@ -27,4 +29,16 @@ export default defineConfig({
       },
     }),
   ],
+  resolve: {
+    alias: [
+      {
+        find: "@/alchemy.run",
+        replacement: fileURLToPath(new URL("alchemy.run.ts", import.meta.url)),
+      },
+      {
+        find: "@",
+        replacement: fileURLToPath(new URL("src", import.meta.url)),
+      },
+    ],
+  },
 });
