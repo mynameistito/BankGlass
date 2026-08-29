@@ -4,8 +4,7 @@ BankGlass is a self-hosted, read-only API and [Model Context Protocol (MCP)](htt
 
 It periodically copies account, balance, and transaction data from Akahu into a Cloudflare Durable Object, then makes the cached data available to trusted applications and AI agents. It cannot make payments or modify bank accounts.
 
-> [!IMPORTANT]
-> BankGlass is a personal, single-user service. It is not a multi-user banking product and is not affiliated with Akahu or any financial institution.
+> [!IMPORTANT] BankGlass is a personal, single-user service. It is not a multi-user banking product and is not affiliated with Akahu or any financial institution.
 
 ## What It Does
 
