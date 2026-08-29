@@ -1,0 +1,14 @@
+type: http_request
+model: http_request
+id: req_accounts
+workspaceId: wk_bankglass
+folderId: fl_accounts
+authentication: {}
+authenticationType: null
+body: {}
+bodyType: null
+description: ""
+headers: []
+method: GET
+name: List accounts
+url: ${[ base_url ]}/v1/accounts

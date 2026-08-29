@@ -1,0 +1,10 @@
+type: folder
+model: folder
+id: fl_sync
+workspaceId: wk_bankglass
+folderId: null
+authentication: {}
+authenticationType: null
+description: ""
+headers: []
+name: Sync

@@ -1,0 +1,19 @@
+type: http_request
+model: http_request
+id: req_all_transactions
+workspaceId: wk_bankglass
+folderId: fl_transactions
+authentication: {}
+authenticationType: null
+body: {}
+bodyType: null
+description: ""
+headers: []
+method: GET
+name: List all posted transactions
+url: ${[ base_url ]}/v1/transactions
+urlParameters:
+  - enabled: true
+    name: limit
+    value: "50"
+    id: null

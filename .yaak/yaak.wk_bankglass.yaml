@@ -1,0 +1,19 @@
+type: workspace
+model: workspace
+id: wk_bankglass
+createdAt: 2026-08-27T00:00:00.000000
+updatedAt: 2026-08-27T00:00:00.000000
+authentication:
+  token: ${[ api_bearer_token ]}
+authenticationType: bearer
+description: Read-only BankGlass REST API requests. Cloudflare Access service-token headers and the REST bearer token are configured in the environment.
+headers:
+  - enabled: true
+    name: CF-Access-Client-Id
+    value: ${[ cf_access_client_id ]}
+    id: null
+  - enabled: true
+    name: CF-Access-Client-Secret
+    value: ${[ cf_access_client_secret ]}
+    id: null
+name: BankGlass REST API

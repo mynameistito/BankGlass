@@ -199,7 +199,7 @@ curl "https://domain.tld/v1/accounts" \
   --header "CF-Access-Client-Secret: <CF_ACCESS_CLIENT_SECRET>"
 ```
 
-An importable request collection is available at `insomnia/BankGlass.insomnia.json`.
+An importable Yaak workspace is available in the [`.yaak`](.yaak) directory. Open it in Yaak with **Open Workspace** to import the requests and environment.
 
 ## MCP Server
 
