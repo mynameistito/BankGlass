@@ -390,7 +390,9 @@ const commandHandlers: CommandHandlers = {
   saveSnapshot,
 } satisfies CommandHandlers;
 
+/** Durable Object implementation of the SQLite-backed bank store. */
 export class BankStoreDO extends DurableObject {
+  /** Initialize the SQLite schema before accepting store commands. */
   constructor(ctx: DurableObjectState, env: Cloudflare.Env) {
     super(ctx, env);
     ctx.blockConcurrencyWhile(() => {
@@ -402,6 +404,7 @@ export class BankStoreDO extends DurableObject {
       return Promise.resolve();
     });
   }
+  /** Execute one validated store command, transactionally for snapshots. */
   command(input: RpcCommand): Reply {
     try {
       const command = Schema.decodeUnknownSync(CommandSchema)(input);
@@ -425,9 +428,12 @@ export class BankStoreDO extends DurableObject {
     }
   }
 }
+/** RPC surface required from the Bank Store Durable Object namespace stub. */
 export interface StoreStub {
+  /** Execute a serialized store command. */
   readonly command: BankStoreDO["command"];
 }
+/** Determine whether a namespace result exposes the Bank Store RPC method. */
 export const isStoreStub = <T>(value: T): value is T & StoreStub =>
   typeof value === "object" &&
   value !== null &&
@@ -518,6 +524,13 @@ function runVoid<E extends ExpectedError>(
       : run(stub, name, args, operation, Schema.Void)
   ).pipe(Effect.asVoid);
 }
+/**
+ * Provide the application store backed by the named Bank Store Durable Object.
+ *
+ * @param namespace - Durable Object namespace binding from the Worker runtime.
+ * @returns An Effect layer implementing `BankStore`.
+ * @throws {TypeError} When the namespace does not expose the expected RPC surface.
+ */
 export const doBankStoreLive = (namespace: Cloudflare.Env["BANK_STORE"]) => {
   const candidate = namespace.getByName("bankglass");
   if (!isStoreStub(candidate)) {

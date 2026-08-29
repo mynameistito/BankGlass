@@ -232,6 +232,13 @@ const handleRequestError = (error: RequestError) => {
   }
 };
 
+/**
+ * Route an authenticated REST request and translate domain failures to HTTP.
+ *
+ * @param request - Incoming REST request.
+ * @param config - Parsed runtime configuration, including the API token.
+ * @returns An effect containing the response for the matched route.
+ */
 export const routeRequest = (request: Request, config: RuntimeConfig) =>
   Effect.gen(function* routeRequestResult() {
     const result = yield* Effect.result(routeRequestProgram(request, config));

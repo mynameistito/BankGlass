@@ -16,6 +16,7 @@ if (!stage) {
 }
 const isProduction = stage === "prod";
 
+/** Alchemy resource definition for the BankGlass Worker and its bindings. */
 export const Worker = Effect.gen(function* defineWorker() {
   const bankStore = DurableObjectResource("BANK_STORE", {
     className: "BankStoreDO",
@@ -75,4 +76,5 @@ export default Stack(
   })
 );
 
+/** Runtime environment inferred from the Alchemy Worker resource definition. */
 export type WorkerEnv = InferEnv<typeof Worker>;

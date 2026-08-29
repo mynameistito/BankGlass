@@ -4,6 +4,14 @@ import { UnauthorizedApiRequestError } from "./errors";
 
 const bearer = /^Bearer (?<token>[A-Za-z0-9._~-]+)$/u;
 
+/**
+ * Authenticate a REST request using a constant-time comparison of token hashes.
+ *
+ * @param request - The request whose `Authorization` header is checked.
+ * @param expected - The configured bearer token.
+ * @returns An effect that succeeds when the token is valid, or fails with
+ * `UnauthorizedApiRequestError` otherwise.
+ */
 export const authenticate = (request: Request, expected: string) =>
   Effect.gen(function* authenticateProgram() {
     const match = bearer.exec(request.headers.get("Authorization") ?? "");

@@ -6,16 +6,23 @@ import { BankStore } from "./bank-store";
 import { RefreshCooldownError } from "./errors";
 import type { DatabaseError, SyncInProgressError } from "./errors";
 
+/** Failures that can prevent a synchronization from completing. */
 export type SyncError =
   | BankProviderError
   | DatabaseError
   | RefreshCooldownError
   | SyncInProgressError;
+/** Counts and freshness metadata produced by a successful synchronization. */
 export interface SyncResult {
+  /** Timestamp at which the normalized snapshot was stored. */
   readonly syncedAt: string;
+  /** Earliest provider freshness timestamp observed in the snapshot. */
   readonly providerRefreshedAt: string | null;
+  /** Number of accounts stored. */
   readonly accounts: number;
+  /** Number of posted transactions stored. */
   readonly postedTransactions: number;
+  /** Number of pending transactions stored. */
   readonly pendingTransactions: number;
 }
 const accountFreshness = (account: {
@@ -26,16 +33,28 @@ const accountFreshness = (account: {
   account.providerTransactionsRefreshedAt,
 ];
 const isPresent = (value: string | null): value is string => value !== null;
+/** Application operation that coordinates provider refresh and persistence. */
 export interface SyncServiceService {
+  /** Synchronize cached data, optionally requesting a provider refresh first. */
   readonly synchronize: (options: {
+    /** Whether the upstream provider should be asked to refresh. */
     readonly requestProviderRefresh: boolean;
   }) => Effect.Effect<SyncResult, SyncError>;
 }
+/** Effect service tag for synchronization operations. */
 export class SyncService extends Context.Service<
   SyncService,
   SyncServiceService
 >()("@bankglass/SyncService") {}
 
+/**
+ * Construct the synchronization service from its timing policy.
+ *
+ * @param cooldownSeconds - Minimum interval between provider refresh requests.
+ * @param lookbackDays - Number of days of posted transactions to reconcile.
+ * @returns An Effect that constructs a `SyncService` implementation from the
+ * services available in its environment.
+ */
 export const makeSyncService = (
   cooldownSeconds: number,
   lookbackDays: number
@@ -125,6 +144,7 @@ export const makeSyncService = (
     return SyncService.of({ synchronize });
   });
 
+/** Provide a live synchronization service with the supplied timing policy. */
 export const syncServiceLive = (
   cooldownSeconds: number,
   lookbackDays: number
