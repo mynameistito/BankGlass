@@ -433,27 +433,45 @@ export const isStoreStub = <T>(value: T): value is T & StoreStub =>
   value !== null &&
   "command" in value &&
   typeof value.command === "function";
-const isDomainError = (cause: unknown) =>
-  cause instanceof ApiRateLimitError ||
-  cause instanceof DatabaseError ||
-  cause instanceof NotFoundError ||
-  cause instanceof SyncInProgressError;
-const toDatabaseError = (cause: unknown, operation: string): DatabaseError => {
-  if (isDomainError(cause)) {
-    // SAFETY: run only receives errors produced by this adapter's reply mapping.
-    return cause as DatabaseError;
-  }
-  return new DatabaseError({ cause, operation });
-};
-const run = <A>(
+type ExpectedError = ApiRateLimitError | NotFoundError | SyncInProgressError;
+type ErrorMapper<E extends ExpectedError> = (cause: unknown) => E | undefined;
+const toStoreError = <E extends ExpectedError>(
+  cause: unknown,
+  operation: string,
+  mapExpectedError?: ErrorMapper<E>
+): DatabaseError | E =>
+  mapExpectedError?.(cause) ?? new DatabaseError({ cause, operation });
+const preserveApiRateLimit = (cause: unknown) =>
+  cause instanceof ApiRateLimitError ? cause : undefined;
+const preserveNotFound = (cause: unknown) =>
+  cause instanceof NotFoundError ? cause : undefined;
+const preserveSyncInProgress = (cause: unknown) =>
+  cause instanceof SyncInProgressError ? cause : undefined;
+function run<A>(
   stub: StoreStub,
   name: string,
   args: readonly unknown[],
   operation: string,
   resultSchema: Schema.Codec<A, unknown, never, never>
-) =>
-  Effect.tryPromise({
-    catch: (cause) => toDatabaseError(cause, operation),
+): Effect.Effect<A, DatabaseError>;
+function run<A, E extends ExpectedError>(
+  stub: StoreStub,
+  name: string,
+  args: readonly unknown[],
+  operation: string,
+  resultSchema: Schema.Codec<A, unknown, never, never>,
+  mapExpectedError: ErrorMapper<E>
+): Effect.Effect<A, DatabaseError | E>;
+function run<A, E extends ExpectedError>(
+  stub: StoreStub,
+  name: string,
+  args: readonly unknown[],
+  operation: string,
+  resultSchema: Schema.Codec<A, unknown, never, never>,
+  mapExpectedError?: ErrorMapper<E>
+) {
+  return Effect.tryPromise({
+    catch: (cause) => toStoreError(cause, operation, mapExpectedError),
     try: async () => {
       const reply = await stub.command({ args, name });
       if (reply.ok) {
@@ -473,12 +491,33 @@ const run = <A>(
       throw new DatabaseError({ cause: reply.error, operation });
     },
   });
-const runVoid = (
+}
+function runVoid(
   stub: StoreStub,
   name: string,
   args: readonly unknown[],
   operation: string
-) => run(stub, name, args, operation, Schema.Void).pipe(Effect.asVoid);
+): Effect.Effect<void, DatabaseError>;
+function runVoid<E extends ExpectedError>(
+  stub: StoreStub,
+  name: string,
+  args: readonly unknown[],
+  operation: string,
+  mapExpectedError: ErrorMapper<E>
+): Effect.Effect<void, DatabaseError | E>;
+function runVoid<E extends ExpectedError>(
+  stub: StoreStub,
+  name: string,
+  args: readonly unknown[],
+  operation: string,
+  mapExpectedError?: ErrorMapper<E>
+) {
+  return (
+    mapExpectedError
+      ? run(stub, name, args, operation, Schema.Void, mapExpectedError)
+      : run(stub, name, args, operation, Schema.Void)
+  ).pipe(Effect.asVoid);
+}
 export const doBankStoreLive = (namespace: Cloudflare.Env["BANK_STORE"]) => {
   const candidate = namespace.getByName("bankglass");
   if (!isStoreStub(candidate)) {
@@ -489,25 +528,40 @@ export const doBankStoreLive = (namespace: Cloudflare.Env["BANK_STORE"]) => {
     BankStore,
     BankStore.of({
       acquireSync: (now, leaseId, before) =>
-        runVoid(stub, "acquireSync", [now, leaseId, before], "acquireSync"),
+        runVoid(
+          stub,
+          "acquireSync",
+          [now, leaseId, before],
+          "acquireSync",
+          preserveSyncInProgress
+        ),
       completeSync: (now, refreshedAt, leaseId) =>
         runVoid(
           stub,
           "completeSync",
           [now, refreshedAt, leaseId],
-          "completeSync"
+          "completeSync",
+          preserveSyncInProgress
         ),
       consumeRateLimit: (bucket, now, limit) =>
         runVoid(
           stub,
           "consumeRateLimit",
           [bucket, now, limit],
-          "consumeRateLimit"
+          "consumeRateLimit",
+          preserveApiRateLimit
         ),
       failSync: (now, code, leaseId) =>
         runVoid(stub, "failSync", [now, code, leaseId], "failSync"),
       getAccount: (id) =>
-        run(stub, "getAccount", [id], "getAccount", BankAccountSchema),
+        run(
+          stub,
+          "getAccount",
+          [id],
+          "getAccount",
+          BankAccountSchema,
+          preserveNotFound
+        ),
       getSyncStatus: run(
         stub,
         "getSyncStatus",
@@ -535,10 +589,17 @@ export const doBankStoreLive = (namespace: Cloudflare.Env["BANK_STORE"]) => {
           stub,
           "markRefreshRequested",
           [now, leaseId],
-          "markRefreshRequested"
+          "markRefreshRequested",
+          preserveSyncInProgress
         ),
       saveSnapshot: (snapshot) =>
-        runVoid(stub, "saveSnapshot", [snapshot], "saveSnapshot"),
+        runVoid(
+          stub,
+          "saveSnapshot",
+          [snapshot],
+          "saveSnapshot",
+          preserveSyncInProgress
+        ),
     })
   );
 };

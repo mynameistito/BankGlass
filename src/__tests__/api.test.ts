@@ -3,8 +3,8 @@ import { Effect } from "effect";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BankStore } from "../bank-store";
+import { doBankStoreLive, isStoreStub } from "../bank-store-do";
 import type { RuntimeConfig } from "../config";
-import { d1BankStoreLive } from "../d1-bank-store";
 import { routeRequest } from "../http-api";
 import { routeMcpRequest } from "../mcp-api";
 import { SyncService } from "../sync-service";
@@ -23,6 +23,13 @@ const config = {
   refreshCooldownSeconds: "3600",
   syncLookbackDays: "14",
 } satisfies RuntimeConfig;
+const resetStore = async () => {
+  const stub = env.BANK_STORE.getByName("bankglass");
+  if (!isStoreStub(stub)) {
+    throw new TypeError("BANK_STORE does not expose the command RPC");
+  }
+  await stub.command({ args: [], name: "reset" });
+};
 
 const requestApi = (request: Request) =>
   Effect.runPromise(
@@ -31,17 +38,13 @@ const requestApi = (request: Request) =>
         SyncService,
         SyncService.of({ synchronize: () => Effect.die("unused") })
       ),
-      Effect.provide(d1BankStoreLive(env.DB))
+      Effect.provide(doBankStoreLive(env.BANK_STORE))
     )
   );
 
 describe("Cloudflare HTTP boundary", () => {
   beforeEach(async () => {
-    await env.DB.batch([
-      env.DB.prepare("DELETE FROM transactions"),
-      env.DB.prepare("DELETE FROM accounts"),
-      env.DB.prepare("DELETE FROM rate_limits"),
-    ]);
+    await resetStore();
   });
 
   it("rejects requests that did not pass Cloudflare Access", async () => {
@@ -95,9 +98,41 @@ describe("Cloudflare HTTP boundary", () => {
     });
   });
 
-  it("reads account data from D1 rather than the provider", async () => {
-    await env.DB.prepare(`INSERT INTO accounts(id,provider_id,institution,name,type,status,currency,current_balance,available_balance,data_updated_at,synced_at)
-      VALUES('account_test','provider_test','BNZ','Everyday','checking','active','NZD',20,18,'2026-08-26T00:00:00.000Z','2026-08-26T00:00:00.000Z')`).run();
+  it("reads account data from the Durable Object rather than the provider", async () => {
+    const store = await Effect.runPromise(
+      BankStore.pipe(Effect.provide(doBankStoreLive(env.BANK_STORE)))
+    );
+    await Effect.runPromise(
+      store.acquireSync("2026-08-26T00:00:00.000Z", "api-test", null)
+    );
+    await Effect.runPromise(
+      store.saveSnapshot({
+        accounts: [
+          {
+            availableBalance: 18,
+            currency: "NZD",
+            currentBalance: 20,
+            dataUpdatedAt: "2026-08-26T00:00:00.000Z",
+            formattedAccount: null,
+            holderName: null,
+            id: "account_test",
+            institution: "BNZ",
+            name: "Everyday",
+            providerBalanceRefreshedAt: null,
+            providerId: "provider_test",
+            providerTransactionsRefreshedAt: null,
+            status: "active",
+            syncedAt: "2026-08-26T00:00:00.000Z",
+            type: "checking",
+          },
+        ],
+        leaseId: "api-test",
+        pending: [],
+        posted: [],
+        reconcilePostedFrom: "2026-08-26T00:00:00.000Z",
+        syncedAt: "2026-08-26T00:00:00.000Z",
+      })
+    );
     const response = await requestApi(
       new Request("https://example.test/v1/accounts/account_test/balance", {
         headers,
@@ -135,7 +170,7 @@ describe("Cloudflare HTTP boundary", () => {
         return yield* Effect.promise(() =>
           routeMcpRequest(request, store, config.accessAppHostname)
         );
-      }).pipe(Effect.provide(d1BankStoreLive(env.DB)))
+      }).pipe(Effect.provide(doBankStoreLive(env.BANK_STORE)))
     );
     const responseBody = await response.text();
     expect(response.status).toBe(200);
