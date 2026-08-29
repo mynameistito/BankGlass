@@ -46,6 +46,26 @@ Connected financial institutions
 
 Akahu Personal Apps are intended for one person accessing their own data. Akahu controls institution support, data freshness, and refresh limits; see the [Personal Apps](https://developers.akahu.nz/docs/personal-apps), [supported integrations](https://developers.akahu.nz/docs/integrations), and [data refreshes](https://developers.akahu.nz/docs/data-refreshes) documentation.
 
+## Authenticate Alchemy
+
+Alchemy needs Cloudflare credentials to provision the resources declared in [`alchemy.run.ts`](alchemy.run.ts). This is separate from the Akahu tokens, Cloudflare Access configuration, and Worker runtime secrets. For local work, authenticate the Alchemy CLI once:
+
+```powershell
+$env:STAGE = "dev"
+bun alchemy login
+```
+
+The command opens a browser for Cloudflare OAuth, or lets you configure an API token, and stores the selected credentials in the `default` Alchemy profile at `~/.alchemy/profiles.json`. The `STAGE` variable is required because the stack uses it to choose resource names and whether to create the production domain.
+
+Useful profile commands:
+
+```powershell
+bun alchemy profile show
+bun alchemy login --configure
+```
+
+Use a separate profile for another Cloudflare account or environment with `--profile <name>` or `ALCHEMY_PROFILE`.
+
 ## Set Up Akahu
 
 1. Create an Akahu profile at [my.akahu.nz](https://my.akahu.nz), enable MFA, and create a Personal App.
@@ -83,7 +103,7 @@ Fill in `.dev.vars`:
 AKAHU_APP_TOKEN=replace-me
 AKAHU_USER_TOKEN=replace-me
 API_BEARER_TOKEN=replace-with-a-random-32-byte-token
-ACCESS_APP_HOSTNAME=bank.example.com
+ACCESS_APP_HOSTNAME=domain.tld
 ACCESS_POLICY_AUD=replace-with-access-application-aud
 ACCESS_TEAM_DOMAIN=https://your-team.cloudflareaccess.com
 AKAHU_API_BASE_URL=https://api.akahu.io/v1
@@ -92,10 +112,10 @@ SYNC_LOOKBACK_DAYS=14
 API_RATE_LIMIT_PER_MINUTE=60
 ```
 
-Generate the REST bearer token in PowerShell:
+Generate the REST bearer token with Bun:
 
-```powershell
-[Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).ToLowerInvariant()
+```bash
+bun -e 'console.log([...crypto.getRandomValues(new Uint8Array(32))].map((byte) => byte.toString(16).padStart(2, "0")).join(""))'
 ```
 
 Start the local Worker:
@@ -110,24 +130,26 @@ Alchemy receives `.dev.vars` through the `dev` script. The Worker intentionally 
 
 ## Deploy
 
-BankGlass includes an Alchemy deployment and a GitHub Actions workflow. Before deploying a fork, replace the repository owner's production hostname in `alchemy.run.ts` and `.github/workflows/deploy.yml` with your own Access-protected hostname.
+BankGlass includes an Alchemy deployment and a GitHub Actions workflow. Before deploying a fork, replace the repository owner's production hostname in [`alchemy.run.ts`](alchemy.run.ts) and [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) with your own Access-protected hostname. 
 
-Set these secrets in your environment or GitHub repository:
+For a local deployment, use the Alchemy profile created above. The Akahu, Access, and Worker configuration values below are still required; Alchemy reads them from the environment while it creates the Worker. `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` are only needed when using non-interactive Cloudflare authentication instead of the local profile.
 
-| Secret                  | Purpose                                      |
-| ----------------------- | -------------------------------------------- |
-| `AKAHU_APP_TOKEN`       | Akahu Personal App ID token                  |
-| `AKAHU_USER_TOKEN`      | Akahu user access token                      |
-| `API_BEARER_TOKEN`      | Additional authentication for `/v1/*` routes |
-| `ACCESS_POLICY_AUD`     | Audience tag of the Access application       |
-| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account used for deployment       |
-| `CLOUDFLARE_API_TOKEN`  | Cloudflare deployment credential             |
+Set these secrets in your environment for a local deployment, or as GitHub repository secrets for the included workflow:
+
+| Secret | Purpose |
+| --- | --- |
+| `AKAHU_APP_TOKEN` | Akahu Personal App ID token |
+| `AKAHU_USER_TOKEN` | Akahu user access token |
+| `API_BEARER_TOKEN` | Additional authentication for `/v1/*` routes |
+| `ACCESS_POLICY_AUD` | Audience tag of the Access application |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account for non-interactive deployment |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare credential for non-interactive deployment |
 
 Set these non-secret values:
 
 | Variable | Example | Default |
 | --- | --- | --- |
-| `ACCESS_APP_HOSTNAME` | `bank.example.com` | Required |
+| `ACCESS_APP_HOSTNAME` | `domain.tld` | Required |
 | `ACCESS_TEAM_DOMAIN` | `https://example.cloudflareaccess.com` | Required |
 | `AKAHU_API_BASE_URL` | `https://api.akahu.io/v1` | Shown value |
 | `API_RATE_LIMIT_PER_MINUTE` | `60` | `60` |
@@ -141,6 +163,8 @@ For a local production deployment, load the values into the environment and run:
 $env:STAGE = "prod"
 bun run deploy
 ```
+
+For CI, the workflow does not use your local Alchemy profile. It runs non-interactively with `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` configured as GitHub secrets, and passes `--yes` to Alchemy. `CLOUDFLARE_WORKERS_SUBDOMAIN` is also required when preview deployments are enabled.
 
 The included deployment workflow deploys `main` after CI succeeds and creates previews for same-repository pull requests. After the first deployment:
 
@@ -169,7 +193,7 @@ Transaction routes accept `from`, `to`, `limit`, and `cursor`. Dates must be ISO
 Example for an unattended client:
 
 ```sh
-curl "https://bank.example.com/v1/accounts" \
+curl "https://domain.tld/v1/accounts" \
   --header "Authorization: Bearer <API_BEARER_TOKEN>" \
   --header "CF-Access-Client-Id: <CF_ACCESS_CLIENT_ID>" \
   --header "CF-Access-Client-Secret: <CF_ACCESS_CLIENT_SECRET>"
@@ -179,7 +203,7 @@ An importable request collection is available at `insomnia/BankGlass.insomnia.js
 
 ## MCP Server
 
-The stateless Streamable HTTP endpoint is `https://bank.example.com/mcp`. It provides four read-only tools:
+The stateless Streamable HTTP endpoint is `https://domain.tld/mcp`. It provides four read-only tools:
 
 | Tool | Description |
 | --- | --- |
@@ -196,7 +220,7 @@ Interactive clients that support remote OAuth can use:
 {
   "mcpServers": {
     "bankglass": {
-      "url": "https://bank.example.com/mcp"
+      "url": "https://domain.tld/mcp"
     }
   }
 }
@@ -208,7 +232,7 @@ For an unattended client that supports custom transport headers, use a Cloudflar
 {
   "mcpServers": {
     "bankglass": {
-      "url": "https://bank.example.com/mcp",
+      "url": "https://domain.tld/mcp",
       "headers": {
         "CF-Access-Client-Id": "${CF_ACCESS_CLIENT_ID}",
         "CF-Access-Client-Secret": "${CF_ACCESS_CLIENT_SECRET}"
@@ -253,6 +277,17 @@ bun run check
 ```
 
 Tests run in workerd against local Worker bindings and do not require an Akahu account. They cover Access JWT validation, REST and MCP boundaries, provider decoding and retry behavior, synchronization, persistence, pagination, rate limits, cooldowns, and security headers.
+
+## Relevant Documentation
+
+- [Akahu API](https://developers.akahu.nz/), including [Personal Apps](https://developers.akahu.nz/docs/personal-apps), [integrations](https://developers.akahu.nz/docs/integrations), and [data refreshes](https://developers.akahu.nz/docs/data-refreshes)
+- [Cloudflare Workers](https://developers.cloudflare.com/workers/)
+- [Cloudflare Durable Objects](https://developers.cloudflare.com/durable-objects/)
+- [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/applications/configure-apps/)
+- [Alchemy](https://alchemy.run/docs)
+- [Effect](https://effect.website/docs/)
+- [Model Context Protocol](https://modelcontextprotocol.io/docs/)
+- [Bun](https://bun.sh/docs)
 
 ## License
 
