@@ -151,4 +151,24 @@ describe("Durable Object banking persistence", () => {
     );
     expect(error._tag).toBe("SyncInProgressError");
   });
+
+  it("preserves lease conflicts when saving a snapshot", async () => {
+    const store = await getStore();
+    await Effect.runPromise(store.acquireSync(time, "first", null));
+
+    const error = await Effect.runPromise(
+      Effect.flip(
+        store.saveSnapshot({
+          accounts: [account],
+          leaseId: "second",
+          pending: [],
+          posted: [],
+          reconcilePostedFrom: time,
+          syncedAt: time,
+        })
+      )
+    );
+
+    expect(error._tag).toBe("SyncInProgressError");
+  });
 });

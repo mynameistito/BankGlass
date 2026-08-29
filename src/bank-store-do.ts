@@ -593,7 +593,13 @@ export const doBankStoreLive = (namespace: Cloudflare.Env["BANK_STORE"]) => {
           preserveSyncInProgress
         ),
       saveSnapshot: (snapshot) =>
-        runVoid(stub, "saveSnapshot", [snapshot], "saveSnapshot"),
+        runVoid(
+          stub,
+          "saveSnapshot",
+          [snapshot],
+          "saveSnapshot",
+          preserveSyncInProgress
+        ),
     })
   );
 };
