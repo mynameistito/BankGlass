@@ -60,8 +60,8 @@ The command opens a browser for Cloudflare OAuth, or lets you configure an API t
 Useful profile commands:
 
 ```powershell
-bunx --no-install alchemy profile show
-bunx --no-install alchemy login --configure
+bun alchemy profile show
+bun alchemy login --configure
 ```
 
 Use a separate profile for another Cloudflare account or environment with `--profile <name>` or `ALCHEMY_PROFILE`.
