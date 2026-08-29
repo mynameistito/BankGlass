@@ -65,7 +65,7 @@ const RuntimeConfigSchema = Schema.Struct({
   refreshCooldownSeconds: PositiveIntegerString,
   syncLookbackDays: PositiveIntegerString,
 });
-/** Parsed, non-secret configuration required by the Worker at runtime. */
+/** Parsed configuration required by the Worker, including sensitive credentials such as API tokens. */
 export type RuntimeConfig = typeof RuntimeConfigSchema.Type;
 
 interface ConfigEnv {

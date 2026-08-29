@@ -18,7 +18,7 @@ import type {
 
 /** Persistence operations for normalized banking data and synchronization state. */
 export interface BankStoreService {
-  /** List all cached accounts in store order. */
+  /** List all cached accounts ordered by name. */
   readonly listAccounts: Effect.Effect<readonly BankAccount[], DatabaseError>;
   /** Retrieve one cached account by its normalized identifier. */
   readonly getAccount: (

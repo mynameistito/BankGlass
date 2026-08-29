@@ -1,6 +1,6 @@
 import { Data } from "effect";
 
-/** Indicates a transient or transport-level provider failure. */
+/** Indicates a provider request failure. */
 export class ProviderUnavailableError extends Data.TaggedError(
   "ProviderUnavailableError"
 )<{
