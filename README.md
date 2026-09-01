@@ -12,7 +12,7 @@ It periodically copies account, balance, and transaction data from Akahu into a 
 - Stores normalized accounts, balances, posted transactions, and pending transactions in a Cloudflare Durable Object SQLite store.
 - Exposes a REST API protected by Cloudflare Access and a separate bearer token.
 - Exposes four read-only MCP tools protected by Cloudflare Access.
-- Refreshes automatically once a day and supports a rate-limited manual refresh.
+- Refreshes automatically every hour and supports a rate-limited manual refresh.
 - Keeps reads fast and private by serving them from the Durable Object instead of calling Akahu on every request.
 
 BankGlass deliberately has no signup flow, tenants, payment scopes, payment endpoints, or arbitrary upstream proxy.
@@ -254,7 +254,7 @@ Akahu reads are cached, and refresh requests are asynchronous. A successful Bank
 - `lastProviderRefreshRequestedAt`: when BankGlass asked Akahu to refresh.
 - `lastSuccessAt`: when the complete Akahu-to-cache sync last succeeded.
 
-The default schedule runs daily at 03:17 UTC. Manual refreshes have a one-hour cooldown to match the Akahu Personal App refresh policy. Posted transactions are reconciled across the latest 14 days by default, with a safety limit of 750 transactions or 100 provider pages per sync. Pending transactions are replaced on each sync because Akahu does not provide stable IDs for them.
+The default schedule runs hourly at 17 minutes past the hour UTC. A failed scheduled sync retries once after one minute; if the upstream refresh already succeeded, the retry falls back to synchronizing Akahu's current cache without requesting another refresh. Manual refreshes have a one-hour cooldown to match the Akahu Personal App refresh policy. Posted transactions are reconciled across the latest 14 days by default, with a safety limit of 750 transactions or 100 provider pages per sync. Pending transactions are replaced on each sync because Akahu does not provide stable IDs for them.
 
 ## Security Model
 
