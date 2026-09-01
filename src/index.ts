@@ -149,7 +149,7 @@ export default {
   /** Handle an authenticated HTTP or MCP request. */
   fetch: (request: Request, env: WorkerEnv) =>
     Effect.runPromise(run(request, env)),
-  /** Run the scheduled daily synchronization in the background. */
+  /** Run the scheduled hourly synchronization in the background. */
   scheduled: (
     _controller: ScheduledController,
     env: WorkerEnv,
@@ -158,7 +158,31 @@ export default {
     const sync = Effect.gen(function* sync() {
       yield* parseConfig(env);
       const service = yield* SyncService;
-      yield* service.synchronize({ requestProviderRefresh: true });
+      const firstAttempt = yield* Effect.result(
+        service.synchronize({ requestProviderRefresh: true })
+      );
+      if (Result.isSuccess(firstAttempt)) {
+        return firstAttempt.success;
+      }
+
+      yield* Effect.logWarning(
+        "Scheduled synchronization failed; retrying in one minute",
+        { errorTag: firstAttempt.failure._tag }
+      );
+      yield* Effect.sleep("1 minute");
+
+      const refreshedRetry = yield* Effect.result(
+        service.synchronize({ requestProviderRefresh: true })
+      );
+      if (Result.isSuccess(refreshedRetry)) {
+        return refreshedRetry.success;
+      }
+
+      yield* Effect.logWarning(
+        "Scheduled refresh retry failed; synchronizing current provider cache",
+        { errorTag: refreshedRetry.failure._tag }
+      );
+      return yield* service.synchronize({ requestProviderRefresh: false });
     }).pipe(
       Effect.provide(
         programLayer(
