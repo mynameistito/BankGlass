@@ -8,6 +8,7 @@ import { doBankStoreLive } from "@/bank-store-do";
 import { parseConfig } from "@/config";
 import { routeRequest } from "@/http-api";
 import { routeMcpRequest } from "@/mcp-api";
+import { synchronizeScheduled } from "@/scheduled-sync";
 import { SyncService, syncServiceLive } from "@/sync-service";
 
 /** Durable Object class exported for the Worker binding. */
@@ -158,31 +159,7 @@ export default {
     const sync = Effect.gen(function* sync() {
       yield* parseConfig(env);
       const service = yield* SyncService;
-      const firstAttempt = yield* Effect.result(
-        service.synchronize({ requestProviderRefresh: true })
-      );
-      if (Result.isSuccess(firstAttempt)) {
-        return firstAttempt.success;
-      }
-
-      yield* Effect.logWarning(
-        "Scheduled synchronization failed; retrying in one minute",
-        { errorTag: firstAttempt.failure._tag }
-      );
-      yield* Effect.sleep("1 minute");
-
-      const refreshedRetry = yield* Effect.result(
-        service.synchronize({ requestProviderRefresh: true })
-      );
-      if (Result.isSuccess(refreshedRetry)) {
-        return refreshedRetry.success;
-      }
-
-      yield* Effect.logWarning(
-        "Scheduled refresh retry failed; synchronizing current provider cache",
-        { errorTag: refreshedRetry.failure._tag }
-      );
-      return yield* service.synchronize({ requestProviderRefresh: false });
+      return yield* synchronizeScheduled(service);
     }).pipe(
       Effect.provide(
         programLayer(
