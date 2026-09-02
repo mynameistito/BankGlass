@@ -2,6 +2,9 @@ import { Effect, Result } from "effect";
 
 import type { SyncServiceService } from "@/sync-service";
 
+const isDeferralError = (error: { readonly _tag: string }) =>
+  error._tag === "RefreshCooldownError" || error._tag === "SyncInProgressError";
+
 /** Run the hourly synchronization while deferring to an existing refresh or sync. */
 export const synchronizeScheduled = (service: SyncServiceService) =>
   Effect.gen(function* synchronizeScheduledSync() {
@@ -12,10 +15,7 @@ export const synchronizeScheduled = (service: SyncServiceService) =>
       return firstAttempt.success;
     }
 
-    if (
-      firstAttempt.failure._tag === "RefreshCooldownError" ||
-      firstAttempt.failure._tag === "SyncInProgressError"
-    ) {
+    if (isDeferralError(firstAttempt.failure)) {
       yield* Effect.logInfo("Scheduled synchronization deferred", {
         errorTag: firstAttempt.failure._tag,
       });
@@ -33,6 +33,13 @@ export const synchronizeScheduled = (service: SyncServiceService) =>
     );
     if (Result.isSuccess(refreshedRetry)) {
       return refreshedRetry.success;
+    }
+
+    if (isDeferralError(refreshedRetry.failure)) {
+      yield* Effect.logInfo("Scheduled synchronization deferred", {
+        errorTag: refreshedRetry.failure._tag,
+      });
+      return;
     }
 
     yield* Effect.logWarning(
