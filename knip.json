@@ -1,0 +1,9 @@
+{
+  "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "entry": ["alchemy.run.ts", "src/__tests__/**/*.test.ts"],
+  "ignoreDependencies": [
+    "cloudflare",
+    "eslint-plugin-github",
+    "eslint-plugin-sonarjs"
+  ]
+}

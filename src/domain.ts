@@ -78,7 +78,7 @@ export const PendingTransactionSchema = Schema.Struct({
 export type PendingTransaction = typeof PendingTransactionSchema.Type;
 
 /** A transaction row returned by the local store. */
-export interface TransactionRecord {
+interface TransactionRecord {
   /** The normalized account identifier. */
   readonly accountId: string;
   /** The transaction amount in the account currency. */
