@@ -11,12 +11,20 @@ permissions:
 
 jobs:
   check:
-    name: Check (${{ matrix.command }})
+    name: ${{ matrix.name }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        command: [typecheck, knip, test, check]
+        include:
+          - command: typecheck
+            name: typecheck
+          - command: knip
+            name: Knip
+          - command: test
+            name: test
+          - command: check
+            name: check
     steps:
       - name: Check out exact commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
