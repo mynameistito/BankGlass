@@ -32,6 +32,7 @@
     "deploy": "alchemy deploy",
     "dev": "STAGE=dev alchemy dev --env-file .dev.vars",
     "test": "vitest run",
+    "knip": "knip",
     "typecheck": "tsc --noEmit",
     "check": "ultracite check",
     "fix": "ultracite fix"
@@ -52,12 +53,12 @@
     "@typescript/native": "npm:typescript@^7.0.2",
     "eslint-plugin-github": "6.1.2",
     "eslint-plugin-sonarjs": "^4.2.0",
+    "knip": "6.34.0",
     "oxfmt": "^0.65.0",
     "oxlint": "^1.80.0",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "ultracite": "7.10.7",
-    "vitest": "^4.1.11",
-    "wrangler": "^4.127.1"
+    "vitest": "^4.1.11"
   },
   "packageManager": "bun@1.4.0"
 }

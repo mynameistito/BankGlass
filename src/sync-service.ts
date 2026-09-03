@@ -7,13 +7,13 @@ import { RefreshCooldownError } from "@/errors";
 import type { DatabaseError, SyncInProgressError } from "@/errors";
 
 /** Failures that can prevent a synchronization from completing. */
-export type SyncError =
+type SyncError =
   | BankProviderError
   | DatabaseError
   | RefreshCooldownError
   | SyncInProgressError;
 /** Counts and freshness metadata produced by a successful synchronization. */
-export interface SyncResult {
+interface SyncResult {
   /** Timestamp at which the normalized snapshot was stored. */
   readonly syncedAt: string;
   /** Earliest provider freshness timestamp observed in the snapshot. */
