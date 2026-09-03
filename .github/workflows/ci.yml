@@ -22,7 +22,7 @@ jobs:
           - command: knip
             name: Knip
           - command: test
-            name: test
+            name: Vitest
           - command: check
             name: Ultracite
     steps:
