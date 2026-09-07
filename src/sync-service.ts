@@ -33,6 +33,9 @@ type SyncError =
   | SyncInProgressError;
 
 type SynchronizeConnection = SyncServiceService["synchronizeConnection"];
+type SyncAcquisitionError = DatabaseError | SyncInProgressError;
+type SyncCooldownError = NotFoundError | RefreshCooldownError;
+type SyncCooldownFailure = SyncAcquisitionError | SyncCooldownError;
 
 type ExplicitRefresh = Extract<
   BankProviderAdapter["refresh"],
@@ -71,11 +74,8 @@ const failWithCooldownWhenApplicable = (
   connection: BankConnection,
   refresh: ExplicitRefresh | null,
   startedMillis: number,
-  acquisitionError: DatabaseError | SyncInProgressError
-): Effect.Effect<
-  never,
-  DatabaseError | NotFoundError | RefreshCooldownError | SyncInProgressError
-> =>
+  acquisitionError: SyncAcquisitionError
+): Effect.Effect<never, SyncCooldownFailure> =>
   Effect.gen(function* checkRefreshCooldown() {
     if (refresh === null) {
       return yield* Effect.fail(acquisitionError);
