@@ -209,14 +209,14 @@ describe("MCP protocol boundary", () => {
         to: null,
       })
     );
-    const seededAccount = accounts[0];
+    const [seededAccount] = accounts;
     const seededNew = posted.items.find(
       (item) => item.providerTransactionId === "transaction_new"
     );
     const seededOld = posted.items.find(
       (item) => item.providerTransactionId === "transaction_old"
     );
-    const seededPending = pendingPage.items[0];
+    const [seededPending] = pendingPage.items;
     if (
       seededAccount === undefined ||
       seededNew === undefined ||
