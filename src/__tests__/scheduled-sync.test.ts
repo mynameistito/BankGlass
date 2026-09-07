@@ -1,89 +1,113 @@
-import { Effect, Fiber } from "effect";
+import { Effect, Fiber, Schema } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 
 import {
-  ProviderUnavailableError,
-  RefreshCooldownError,
-  SyncInProgressError,
-} from "@/errors";
+  ConnectionIdSchema,
+  ProviderIdSchema,
+} from "@/domain/identifiers";
+import { ProviderUnavailableError } from "@/errors";
 import { synchronizeScheduled } from "@/scheduled-sync";
+import type { SyncServiceService } from "@/sync-service";
 
-const expectDeferral = async (
-  error: RefreshCooldownError | SyncInProgressError
-) => {
-  let calls = 0;
-  const refreshOptions: boolean[] = [];
-  const service = {
-    synchronize: (options: { readonly requestProviderRefresh: boolean }) =>
-      Effect.gen(function* synchronize() {
-        calls += 1;
-        refreshOptions.push(options.requestProviderRefresh);
-        return yield* Effect.fail(error);
-      }),
-  };
+const connectionId = Schema.decodeUnknownSync(ConnectionIdSchema)(
+  "connection_scheduled_test"
+);
+const providerId = Schema.decodeUnknownSync(ProviderIdSchema)("scheduled");
 
-  await Effect.runPromise(synchronizeScheduled(service));
+const failure = (errorTag: string) => ({
+  _tag: "Failure" as const,
+  connectionId,
+  errorTag,
+  providerId,
+});
 
-  expect(calls).toBe(1);
-  expect(refreshOptions).toStrictEqual([true]);
-};
-
-const expectRetryDeferral = async (
-  error: RefreshCooldownError | SyncInProgressError
-) => {
-  let calls = 0;
-  const refreshOptions: boolean[] = [];
-  const service = {
-    synchronize: (options: { readonly requestProviderRefresh: boolean }) =>
-      Effect.gen(function* synchronize() {
-        calls += 1;
-        refreshOptions.push(options.requestProviderRefresh);
-        return yield* Effect.fail(
-          calls === 1
-            ? new ProviderUnavailableError({
-                cause: new TypeError("temporary provider failure"),
-                operation: "getAccounts",
-              })
-            : error
-        );
-      }),
-  };
-
-  await Effect.runPromise(
-    Effect.gen(function* retryAfterDelay() {
-      const fiber = yield* synchronizeScheduled(service).pipe(Effect.forkChild);
-      yield* TestClock.adjust("1 minute");
-      yield* Fiber.join(fiber);
-    }).pipe(Effect.provide(TestClock.layer()))
-  );
-
-  expect(calls).toBe(2);
-  expect(refreshOptions).toStrictEqual([true, true]);
+const success = {
+  _tag: "Success" as const,
+  accounts: 0,
+  connectionId,
+  pendingTransactions: 0,
+  postedTransactions: 0,
+  providerId,
+  providerRefreshedAt: null,
+  syncedAt: "1970-01-01T00:01:00.000Z",
 };
 
 describe("scheduled synchronization policy", () => {
-  it("defers when a refresh is still inside its cooldown", async () => {
-    expect.hasAssertions();
-    await expectDeferral(
-      new RefreshCooldownError({ retryAt: "2026-09-02T09:17:00.000Z" })
+  it.each(["RefreshCooldownError", "SyncInProgressError"])(
+    "does not retry a %s deferral",
+    async (errorTag) => {
+      let connectionCalls = 0;
+      const service: SyncServiceService = {
+        synchronizeConnection: () =>
+          Effect.sync(() => {
+            connectionCalls += 1;
+            return success;
+          }),
+        synchronizeEnabled: () => Effect.succeed([failure(errorTag)]),
+      };
+
+      const outcomes = await Effect.runPromise(synchronizeScheduled(service));
+
+      expect(outcomes).toStrictEqual([failure(errorTag)]);
+      expect(connectionCalls).toBe(0);
+    }
+  );
+
+  it("retries a failed connection and keeps a successful retry", async () => {
+    const refreshModes: string[] = [];
+    const service: SyncServiceService = {
+      synchronizeConnection: ({ refresh }) =>
+        Effect.sync(() => {
+          refreshModes.push(refresh);
+          return success;
+        }),
+      synchronizeEnabled: () =>
+        Effect.succeed([failure("ProviderUnavailableError")]),
+    };
+
+    const outcomes = await Effect.runPromise(
+      Effect.gen(function* runScheduled() {
+        const fiber = yield* synchronizeScheduled(service).pipe(Effect.forkChild);
+        yield* TestClock.adjust("1 minute");
+        return yield* Fiber.join(fiber);
+      }).pipe(Effect.provide(TestClock.layer()))
     );
+
+    expect(refreshModes).toStrictEqual(["RequestIfSupported"]);
+    expect(outcomes).toStrictEqual([success]);
   });
 
-  it("defers while another synchronization owns the lease", async () => {
-    expect.hasAssertions();
-    await expectDeferral(new SyncInProgressError({}));
-  });
+  it("falls back to provider cache after a failed refresh retry", async () => {
+    const refreshModes: string[] = [];
+    const service: SyncServiceService = {
+      synchronizeConnection: ({ refresh }) => {
+        refreshModes.push(refresh);
+        return refresh === "RequestIfSupported"
+          ? Effect.fail(
+              new ProviderUnavailableError({
+                cause: "temporary",
+                operation: "refresh",
+              })
+            )
+          : Effect.succeed(success);
+      },
+      synchronizeEnabled: () =>
+        Effect.succeed([failure("ProviderUnavailableError")]),
+    };
 
-  it("defers when the refresh retry enters its cooldown", async () => {
-    expect.hasAssertions();
-    await expectRetryDeferral(
-      new RefreshCooldownError({ retryAt: "2026-09-02T09:17:00.000Z" })
+    const outcomes = await Effect.runPromise(
+      Effect.gen(function* runScheduled() {
+        const fiber = yield* synchronizeScheduled(service).pipe(Effect.forkChild);
+        yield* TestClock.adjust("1 minute");
+        return yield* Fiber.join(fiber);
+      }).pipe(Effect.provide(TestClock.layer()))
     );
-  });
 
-  it("defers when another synchronization starts before the refresh retry", async () => {
-    expect.hasAssertions();
-    await expectRetryDeferral(new SyncInProgressError({}));
+    expect(refreshModes).toStrictEqual([
+      "RequestIfSupported",
+      "ReadAvailable",
+    ]);
+    expect(outcomes).toStrictEqual([success]);
   });
 });

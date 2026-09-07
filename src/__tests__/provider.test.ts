@@ -1,11 +1,53 @@
-import { Effect } from "effect";
+import { Effect, Redacted, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { decodeAkahuAccounts, makeAkahuBankProvider } from "@/akahu-provider";
+import type { BankConnection } from "@/domain/connection";
+import { ConnectionIdSchema } from "@/domain/identifiers";
+import {
+  decodeAkahuAccounts,
+  makeAkahuProvider,
+} from "@/providers/akahu/provider";
 
 const now = "2026-08-26T00:00:00.000Z";
+const connection: BankConnection = {
+  authorization: { _tag: "Connected" },
+  createdAt: now,
+  enabled: true,
+  id: Schema.decodeUnknownSync(ConnectionIdSchema)("connection_akahu_test"),
+  label: "Akahu test",
+  lastSyncAt: null,
+  metadata: {},
+  providerId: makeAkahuProvider({
+    appToken: Redacted.make("app"),
+    baseUrl: "https://api.example.test",
+    userToken: Redacted.make("user"),
+  }).id,
+  updatedAt: now,
+};
+
+const makeProvider = (
+  fetchImplementation: typeof fetch,
+  requestTimeoutMs?: number
+) =>
+  makeAkahuProvider(
+    {
+      appToken: Redacted.make("app"),
+      baseUrl: "https://api.example.test",
+      ...(requestTimeoutMs === undefined ? {} : { requestTimeoutMs }),
+      userToken: Redacted.make("user"),
+    },
+    fetchImplementation
+  );
+
+const explicitRefresh = (provider: ReturnType<typeof makeAkahuProvider>) => {
+  if (provider.refresh._tag !== "Explicit") {
+    throw new TypeError("Akahu must expose explicit refresh semantics");
+  }
+  return provider.refresh;
+};
+
 describe("Akahu provider boundary", () => {
-  it("decodes and normalizes a valid account response", async () => {
+  it("decodes a valid account without assigning a BankGlass-local ID", async () => {
     const result = await Effect.runPromise(
       decodeAkahuAccounts(
         {
@@ -29,10 +71,11 @@ describe("Akahu provider boundary", () => {
     );
     expect(result[0]).toMatchObject({
       currentBalance: 100.5,
-      id: "account_acc_example",
       institution: "BNZ",
+      providerAccountId: "acc_example",
       status: "active",
     });
+    expect(result[0]).not.toHaveProperty("id");
   });
 
   it("rejects malformed provider data as a typed error", async () => {
@@ -44,22 +87,19 @@ describe("Akahu provider boundary", () => {
     expect(error._tag).toBe("InvalidProviderResponseError");
   });
 
-  it("models upstream rate limits without retrying them", async () => {
+  it("models refresh rate limits without retrying them", async () => {
     let calls = 0;
-    const provider = makeAkahuBankProvider(
-      {
-        appToken: "app",
-        baseUrl: "https://api.example.test",
-        userToken: "user",
-      },
-      () => {
-        calls += 1;
-        return Promise.resolve(
-          new Response(null, { headers: { "Retry-After": "30" }, status: 429 })
-        );
-      }
+    const provider = makeProvider(() => {
+      calls += 1;
+      return Promise.resolve(
+        new Response(null, { headers: { "Retry-After": "30" }, status: 429 })
+      );
+    });
+
+    const error = await Effect.runPromise(
+      Effect.flip(explicitRefresh(provider).request(connection))
     );
-    const error = await Effect.runPromise(Effect.flip(provider.requestRefresh));
+
     expect(error).toMatchObject({
       _tag: "ProviderRateLimitError",
       retryAfterSeconds: 30,
@@ -67,56 +107,46 @@ describe("Akahu provider boundary", () => {
     expect(calls).toBe(1);
   });
 
-  it("retries transient provider failures", async () => {
-    let calls = 0;
-    const provider = makeAkahuBankProvider(
-      {
-        appToken: "app",
-        baseUrl: "https://api.example.test",
-        userToken: "user",
-      },
-      () => {
-        calls += 1;
+  it("retries transient read failures but not successful follow-up reads", async () => {
+    let accountCalls = 0;
+    const provider = makeProvider((input) => {
+      const url = String(input);
+      if (url.endsWith("/accounts")) {
+        accountCalls += 1;
         return Promise.resolve(
-          calls < 3
+          accountCalls < 3
             ? new Response(null, { status: 503 })
             : Response.json({ items: [], success: true })
         );
       }
+      return Promise.resolve(Response.json({ items: [], success: true }));
+    });
+
+    await Effect.runPromise(
+      provider.readSnapshot({ connection, start: null })
     );
-    await Effect.runPromise(provider.getAccounts);
-    expect(calls).toBe(3);
+
+    expect(accountCalls).toBe(3);
   });
 
-  it("does not retry refresh requests", async () => {
+  it("does not retry explicit refresh requests", async () => {
     let calls = 0;
-    const provider = makeAkahuBankProvider(
-      {
-        appToken: "app",
-        baseUrl: "https://api.example.test",
-        userToken: "user",
-      },
-      () => {
-        calls += 1;
-        return Promise.resolve(new Response(null, { status: 503 }));
-      }
-    );
+    const provider = makeProvider(() => {
+      calls += 1;
+      return Promise.resolve(new Response(null, { status: 503 }));
+    });
 
-    const error = await Effect.runPromise(Effect.flip(provider.requestRefresh));
+    const error = await Effect.runPromise(
+      Effect.flip(explicitRefresh(provider).request(connection))
+    );
 
     expect(error._tag).toBe("ProviderUnavailableError");
     expect(calls).toBe(1);
   });
 
-  it("aborts a refresh when its response body times out", async () => {
+  it("aborts an explicit refresh when its response body times out", async () => {
     let aborted = false;
-    const provider = makeAkahuBankProvider(
-      {
-        appToken: "app",
-        baseUrl: "https://api.example.test",
-        requestTimeoutMs: 5,
-        userToken: "user",
-      },
+    const provider = makeProvider(
       (_input, init) =>
         Promise.resolve(
           new Response(
@@ -133,10 +163,13 @@ describe("Akahu provider boundary", () => {
               },
             })
           )
-        )
+        ),
+      5
     );
 
-    const error = await Effect.runPromise(Effect.flip(provider.requestRefresh));
+    const error = await Effect.runPromise(
+      Effect.flip(explicitRefresh(provider).request(connection))
+    );
 
     expect(error).toMatchObject({
       _tag: "ProviderUnavailableError",
@@ -146,30 +179,30 @@ describe("Akahu provider boundary", () => {
   });
 
   it("rejects repeated transaction cursors", async () => {
-    let calls = 0;
-    const provider = makeAkahuBankProvider(
-      {
-        appToken: "app",
-        baseUrl: "https://api.example.test",
-        userToken: "user",
-      },
-      () => {
-        calls += 1;
-        return Promise.resolve(
-          Response.json({
-            cursor: { next: "repeated" },
-            items: [],
-            success: true,
-          })
-        );
+    let transactionCalls = 0;
+    const provider = makeProvider((input) => {
+      const url = String(input);
+      if (url.endsWith("/accounts")) {
+        return Promise.resolve(Response.json({ items: [], success: true }));
       }
-    );
+      if (url.includes("/transactions/pending")) {
+        return Promise.resolve(Response.json({ items: [], success: true }));
+      }
+      transactionCalls += 1;
+      return Promise.resolve(
+        Response.json({
+          cursor: { next: "repeated" },
+          items: [],
+          success: true,
+        })
+      );
+    });
 
     const error = await Effect.runPromise(
-      Effect.flip(provider.getTransactions({ start: null }))
+      Effect.flip(provider.readSnapshot({ connection, start: null }))
     );
 
     expect(error._tag).toBe("InvalidProviderResponseError");
-    expect(calls).toBe(2);
+    expect(transactionCalls).toBe(2);
   });
 });
