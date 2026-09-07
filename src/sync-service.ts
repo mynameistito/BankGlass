@@ -1,11 +1,4 @@
-import {
-  Clock,
-  Context,
-  Duration,
-  Effect,
-  Layer,
-  Result,
-} from "effect";
+import { Clock, Context, Duration, Effect, Layer, Result } from "effect";
 
 import { BankStore } from "@/bank-store";
 import type { ConnectionId } from "@/domain/identifiers";
@@ -14,22 +7,18 @@ import type {
   ConnectionSyncSuccess,
   SyncRefreshMode,
 } from "@/domain/sync";
-import {
-  RefreshCooldownError,
-} from "@/errors";
+import { RefreshCooldownError } from "@/errors";
 import type {
   DatabaseError,
   NotFoundError,
   SyncInProgressError,
 } from "@/errors";
-import type { ProviderNotRegisteredError } from "@/errors/provider-registry";
-import {
-  ProviderRegistry,
-  type BankProviderError,
-} from "@/provider-registry";
+import type { ProviderNotRegisteredError } from "@/errors/provider-not-registered";
+import { ProviderRegistry } from "@/provider-registry";
+import type { BankProviderError } from "@/provider-registry";
 
 /** Failures that can prevent one connection from synchronizing. */
-export type SyncError =
+type SyncError =
   | BankProviderError
   | DatabaseError
   | NotFoundError
@@ -96,8 +85,7 @@ export const makeSyncService = (lookbackDays: number) =>
         explicitRefresh === null
           ? null
           : toIso(
-              startedMillis -
-                Duration.toMillis(explicitRefresh.minimumInterval)
+              startedMillis - Duration.toMillis(explicitRefresh.minimumInterval)
             );
       const leaseId = crypto.randomUUID();
       const acquisition = yield* Effect.result(
@@ -189,8 +177,11 @@ export const makeSyncService = (lookbackDays: number) =>
     ) =>
       Effect.gen(function* synchronizeAllEnabled() {
         const connections = yield* store.listConnections;
+        const enabledConnections = connections.filter(
+          (connection) => connection.enabled
+        );
         return yield* Effect.forEach(
-          connections.filter((connection) => connection.enabled),
+          enabledConnections,
           (connection) =>
             synchronizeConnection({
               connectionId: connection.id,
