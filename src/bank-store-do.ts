@@ -865,7 +865,7 @@ const saveSnapshot: CommandHandler = (sql, args) => {
   return saveSnapshotRows(sql, snapshot);
 };
 
-const commandHandlers: Record<string, CommandHandler> = {
+const commandHandlers = {
   acquireSync,
   completeSync,
   consumeRateLimit,
@@ -882,7 +882,11 @@ const commandHandlers: Record<string, CommandHandler> = {
   reset,
   saveConnection,
   saveSnapshot,
-};
+} satisfies Record<string, CommandHandler>;
+
+const isCommandName = (
+  name: string
+): name is keyof typeof commandHandlers => name in commandHandlers;
 
 /** Durable Object implementation of the SQLite-backed BankGlass store. */
 export class BankStoreDO extends DurableObject {
@@ -899,10 +903,10 @@ export class BankStoreDO extends DurableObject {
   command(input: RpcCommand): Reply {
     try {
       const command = Schema.decodeUnknownSync(CommandSchema)(input);
-      const handler = commandHandlers[command.name];
-      if (handler === undefined) {
+      if (!isCommandName(command.name)) {
         throw new Error(`Unknown bank store command: ${command.name}`);
       }
+      const handler = commandHandlers[command.name];
       const execute = () => handler(this.ctx.storage.sql, command.args);
       return ["deleteConnection", "saveConnection", "saveSnapshot"].includes(
         command.name
