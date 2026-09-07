@@ -1,10 +1,7 @@
 import { env, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 
-import {
-  isStoreStub,
-  migrateBankStoreSchema,
-} from "@/bank-store-do";
+import { isStoreStub, migrateBankStoreSchema } from "@/bank-store-do";
 
 const time = "2026-08-26T00:00:00.000Z";
 
@@ -44,7 +41,7 @@ describe("bank store schema migration", () => {
     }
 
     await runInDurableObject(stub, (_instance, state) => {
-      const sql = state.storage.sql;
+      const { sql } = state.storage;
       for (const table of [
         "transactions",
         "accounts",
@@ -130,40 +127,42 @@ describe("bank store schema migration", () => {
         )
         .one();
 
-      expect(connection).toStrictEqual({
-        id: "connection_akahu_default",
-        lastSyncAt: time,
-        providerId: "akahu",
+      expect({ connection, migratedAccount, migratedTransaction, sync }).toStrictEqual({
+        connection: {
+          id: "connection_akahu_default",
+          lastSyncAt: time,
+          providerId: "akahu",
+        },
+        migratedAccount: {
+          connectionId: "connection_akahu_default",
+          id: "account_acc_1",
+          providerAccountId: "acc_1",
+        },
+        migratedTransaction: {
+          connectionId: "connection_akahu_default",
+          id: "transaction_tx_1",
+          providerTransactionId: "tx_1",
+        },
+        sync: { lastSuccessAt: time },
       });
-      expect(migratedAccount).toStrictEqual({
-        connectionId: "connection_akahu_default",
-        id: "account_acc_1",
-        providerAccountId: "acc_1",
-      });
-      expect(migratedTransaction).toStrictEqual({
-        connectionId: "connection_akahu_default",
-        id: "transaction_tx_1",
-        providerTransactionId: "tx_1",
-      });
-      expect(sync.lastSuccessAt).toBe(time);
 
       migrateBankStoreSchema(sql, "2026-08-27T00:00:00.000Z");
-      expect(
-        sql.exec<{ count: number }>("SELECT COUNT(*) AS count FROM accounts").one()
-          .count
-      ).toBe(1);
-      expect(
-        sql
-          .exec<{ count: number }>("SELECT COUNT(*) AS count FROM transactions")
-          .one().count
-      ).toBe(1);
-      expect(
-        sql
-          .exec<{ count: number }>(
-            "SELECT COUNT(*) AS count FROM schema_migrations WHERE version=2"
-          )
-          .one().count
-      ).toBe(1);
+      const accountCount = sql
+        .exec<{ count: number }>("SELECT COUNT(*) AS count FROM accounts")
+        .one().count;
+      const transactionCount = sql
+        .exec<{ count: number }>("SELECT COUNT(*) AS count FROM transactions")
+        .one().count;
+      const migrationCount = sql
+        .exec<{ count: number }>(
+          "SELECT COUNT(*) AS count FROM schema_migrations WHERE version=2"
+        )
+        .one().count;
+      expect({ accountCount, migrationCount, transactionCount }).toStrictEqual({
+        accountCount: 1,
+        migrationCount: 1,
+        transactionCount: 1,
+      });
     });
   });
 });
