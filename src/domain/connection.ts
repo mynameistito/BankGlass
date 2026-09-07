@@ -26,7 +26,6 @@ export type ConnectionAuthorization = typeof ConnectionAuthorizationSchema.Type;
 /** Persisted, non-secret metadata for one configured provider connection. */
 export const BankConnectionSchema = Schema.Struct({
   authorization: ConnectionAuthorizationSchema,
-  consentExpiresAt: Schema.NullOr(IsoDateTimeSchema),
   createdAt: IsoDateTimeSchema,
   enabled: Schema.Boolean,
   id: ConnectionIdSchema,

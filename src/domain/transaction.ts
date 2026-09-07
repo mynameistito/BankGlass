@@ -28,7 +28,6 @@ const CommonProviderTransactionFields = {
   providerTransactionId: ProviderTransactionIdSchema,
   providerUpdatedAt: IsoDateTimeSchema,
   reference: Schema.NullOr(Schema.String),
-  syncedAt: IsoDateTimeSchema,
   transactionAt: IsoDateTimeSchema,
   type: Schema.String,
 } as const;
@@ -55,7 +54,8 @@ export const ProviderPendingTransactionSchema = Schema.Struct({
 export type ProviderPendingTransaction =
   typeof ProviderPendingTransactionSchema.Type;
 
-const PersistedTransactionFields = {
+/** Posted or pending transaction persisted and exposed by BankGlass. */
+export const TransactionRecordSchema = Schema.Struct({
   accountId: AccountIdSchema,
   amount: Schema.Number,
   balance: Schema.NullOr(Schema.Number),
@@ -70,19 +70,15 @@ const PersistedTransactionFields = {
   merchantName: Schema.NullOr(Schema.String),
   otherAccount: Schema.NullOr(Schema.String),
   particulars: Schema.NullOr(Schema.String),
+  providerCreatedAt: Schema.NullOr(IsoDateTimeSchema),
   providerId: ProviderIdSchema,
   providerTransactionId: ProviderTransactionIdSchema,
   providerUpdatedAt: IsoDateTimeSchema,
   reference: Schema.NullOr(Schema.String),
+  status: Schema.Literals(["posted", "pending"]),
   syncedAt: IsoDateTimeSchema,
   transactionAt: IsoDateTimeSchema,
   type: Schema.String,
-} as const;
-
-/** Posted or pending transaction persisted and exposed by BankGlass. */
-export const TransactionRecordSchema = Schema.Struct({
-  ...PersistedTransactionFields,
-  status: Schema.Literals(["posted", "pending"]),
 });
 /** Posted or pending transaction persisted and exposed by BankGlass. */
 export type TransactionRecord = typeof TransactionRecordSchema.Type;
