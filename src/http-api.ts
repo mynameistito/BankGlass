@@ -5,7 +5,9 @@ import { authenticate } from "@/auth";
 import { BankStore } from "@/bank-store";
 import type { BankStoreService } from "@/bank-store";
 import type { RuntimeConfig } from "@/config";
-import type { TransactionQuery } from "@/domain";
+import { AccountIdSchema } from "@/domain/identifiers";
+import type { AccountId } from "@/domain/identifiers";
+import type { TransactionQuery } from "@/domain/transaction";
 import { InvalidRequestError } from "@/errors";
 import { SyncService } from "@/sync-service";
 
@@ -27,6 +29,7 @@ const routeNotFound = {
   error: { code: "NOT_FOUND", message: "Route not found" },
 };
 const IsoDateTimeSchema = z.iso.datetime({ offset: true });
+
 const parseDate = (value: string | null, name: string) => {
   if (value === null) {
     return null;
@@ -38,9 +41,18 @@ const parseDate = (value: string | null, name: string) => {
   }
   return new Date(value).toISOString();
 };
+
+const parseAccountId = (value: string): AccountId => {
+  try {
+    return Schema.decodeUnknownSync(AccountIdSchema)(value);
+  } catch {
+    throw new InvalidRequestError({ message: "accountId is invalid" });
+  }
+};
+
 const parseQuery = (
   url: URL,
-  accountId: string | null,
+  accountId: AccountId | null,
   status: "posted" | "pending" | null
 ): TransactionQuery => {
   const rawLimit = url.searchParams.get("limit") ?? "50";
@@ -65,11 +77,21 @@ const parseQuery = (
       throw new InvalidRequestError({ message: "cursor is invalid" });
     }
   }
-  return { accountId, cursor, from, limit, status, to };
+  return {
+    accountId,
+    connectionId: null,
+    cursor,
+    from,
+    limit,
+    providerId: null,
+    status,
+    to,
+  };
 };
+
 const decodeQuery = (
   url: URL,
-  accountId: string | null,
+  accountId: AccountId | null,
   status: "posted" | "pending" | null
 ) =>
   Effect.try({
@@ -87,7 +109,13 @@ const routeAccountRequest = (
   store: BankStoreService
 ) =>
   Effect.gen(function* accountRoute() {
-    const accountId = decodeURIComponent(parts[2] ?? "");
+    const accountId = yield* Effect.try({
+      catch: (cause) =>
+        cause instanceof InvalidRequestError
+          ? cause
+          : new InvalidRequestError({ message: "accountId is invalid" }),
+      try: () => parseAccountId(decodeURIComponent(parts[2] ?? "")),
+    });
     const account = yield* store.getAccount(accountId);
     if (request.method === "GET" && parts.length === 3) {
       return json({ data: account });
@@ -100,12 +128,12 @@ const routeAccountRequest = (
       return json({
         data: {
           accountId,
-          available: account["availableBalance"],
-          currency: account["currency"],
-          current: account["currentBalance"],
-          dataUpdatedAt: account["dataUpdatedAt"],
-          providerRefreshedAt: account["providerBalanceRefreshedAt"],
-          syncedAt: account["syncedAt"],
+          available: account.availableBalance,
+          currency: account.currency,
+          current: account.currentBalance,
+          dataUpdatedAt: account.dataUpdatedAt,
+          providerRefreshedAt: account.providerBalanceRefreshedAt,
+          syncedAt: account.syncedAt,
         },
       });
     }
@@ -146,7 +174,9 @@ const routeRequestProgram = (request: Request, config: RuntimeConfig) =>
       return json(routeNotFound, 404);
     }
     if (request.method === "GET" && url.pathname === "/v1/accounts") {
-      return json({ data: yield* store.listAccounts });
+      return json({
+        data: yield* store.listAccounts({ connectionId: null, providerId: null }),
+      });
     }
     if (request.method === "GET" && url.pathname === "/v1/transactions") {
       const query = yield* decodeQuery(url, null, "posted");
@@ -154,11 +184,14 @@ const routeRequestProgram = (request: Request, config: RuntimeConfig) =>
       return json({ data: page.items, nextCursor: page.nextCursor });
     }
     if (request.method === "GET" && url.pathname === "/v1/status") {
-      return json({ data: yield* store.getSyncStatus });
+      const statuses = yield* store.listSyncStatuses;
+      return json({ data: statuses.length === 1 ? statuses[0] : statuses });
     }
     if (request.method === "POST" && url.pathname === "/v1/refresh") {
       const sync = yield* SyncService;
-      const result = yield* sync.synchronize({ requestProviderRefresh: true });
+      const result = yield* sync.synchronizeEnabled({
+        refresh: "RequestIfSupported",
+      });
       return json({ data: result }, 202);
     }
     if (parts[1] === "accounts" && parts[2] !== undefined) {
@@ -220,6 +253,7 @@ const handleRequestError = (error: RequestError) => {
       return json(body, 502);
     }
     case "InvalidProviderResponseError":
+    case "ProviderNotRegisteredError":
     case "ProviderUnavailableError": {
       return json(body, 503);
     }
@@ -233,7 +267,7 @@ const handleRequestError = (error: RequestError) => {
 };
 
 /**
- * Route an authenticated REST request and translate domain failures to HTTP.
+ * Route an authenticated REST request and translate application failures to HTTP.
  *
  * @param request - Incoming REST request.
  * @param config - Parsed runtime configuration, including the API token.

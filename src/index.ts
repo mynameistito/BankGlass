@@ -1,33 +1,41 @@
-import { Effect, Layer, Result } from "effect";
+import { Effect, Layer, Redacted, Result } from "effect";
 
 import { authenticateAccess } from "@/access-auth";
-import { akahuBankProviderLive } from "@/akahu-provider";
 import type { WorkerEnv } from "@/alchemy.run";
 import { BankStore } from "@/bank-store";
 import { doBankStoreLive } from "@/bank-store-do";
 import { parseConfig } from "@/config";
 import { routeRequest } from "@/http-api";
 import { routeMcpRequest } from "@/mcp-api";
+import { providerRegistryLayer } from "@/provider-registry";
+import { makeAkahuProvider } from "@/providers/akahu/provider";
 import { synchronizeScheduled } from "@/scheduled-sync";
 import { SyncService, syncServiceLive } from "@/sync-service";
 
 /** Durable Object class exported for the Worker binding. */
 export { BankStoreDO } from "@/bank-store-do";
 
-const programLayer = (env: WorkerEnv, cooldown: number, lookback: number) => {
-  const dependencies = Layer.merge(
-    // Alchemy's inferred namespace uses the generic runtime stub shape.
-    doBankStoreLive(env.BANK_STORE),
-    akahuBankProviderLive({
-      appToken: env.AKAHU_APP_TOKEN,
-      baseUrl: env.AKAHU_API_BASE_URL,
-      userToken: env.AKAHU_USER_TOKEN,
-    })
+const previewProviderSentinel = "preview-provider-disabled";
+
+const programLayer = (env: WorkerEnv, lookbackDays: number) => {
+  const storeLayer = doBankStoreLive(env.BANK_STORE);
+  const providers =
+    env.AKAHU_APP_TOKEN === previewProviderSentinel ||
+    env.AKAHU_USER_TOKEN === previewProviderSentinel
+      ? []
+      : [
+          makeAkahuProvider({
+            appToken: Redacted.make(env.AKAHU_APP_TOKEN),
+            baseUrl: env.AKAHU_API_BASE_URL,
+            userToken: Redacted.make(env.AKAHU_USER_TOKEN),
+          }),
+        ];
+  const registryLayer = providerRegistryLayer(providers);
+  const dependencies = Layer.merge(storeLayer, registryLayer);
+  const synchronization = syncServiceLive(lookbackDays).pipe(
+    Layer.provide(dependencies)
   );
-  return Layer.merge(
-    dependencies,
-    syncServiceLive(cooldown, lookback).pipe(Layer.provide(dependencies))
-  );
+  return Layer.merge(dependencies, synchronization);
 };
 
 const accessDeniedResponse = () =>
@@ -117,13 +125,7 @@ const run = (request: Request, env: WorkerEnv) =>
       }
       return yield* routeRequest(request, config);
     }).pipe(
-      Effect.provide(
-        programLayer(
-          env,
-          Number(config.refreshCooldownSeconds),
-          Number(config.syncLookbackDays)
-        )
-      )
+      Effect.provide(programLayer(env, Number(config.syncLookbackDays)))
     );
   }).pipe(
     Effect.catchTag("UnauthorizedAccessRequestError", () =>
@@ -148,9 +150,8 @@ const run = (request: Request, env: WorkerEnv) =>
 
 export default {
   /** Handle an authenticated HTTP or MCP request. */
-  fetch: (request: Request, env: WorkerEnv) =>
-    Effect.runPromise(run(request, env)),
-  /** Run the scheduled hourly synchronization in the background. */
+  fetch: (request: Request, env: WorkerEnv) => Effect.runPromise(run(request, env)),
+  /** Run the scheduled synchronization across every enabled provider connection. */
   scheduled: (
     _controller: ScheduledController,
     env: WorkerEnv,
@@ -161,13 +162,7 @@ export default {
       const service = yield* SyncService;
       return yield* synchronizeScheduled(service);
     }).pipe(
-      Effect.provide(
-        programLayer(
-          env,
-          Number(env.REFRESH_COOLDOWN_SECONDS),
-          Number(env.SYNC_LOOKBACK_DAYS)
-        )
-      )
+      Effect.provide(programLayer(env, Number(env.SYNC_LOOKBACK_DAYS)))
     );
     const completion = Effect.gen(function* scheduledCompletion() {
       const result = yield* Effect.result(sync);

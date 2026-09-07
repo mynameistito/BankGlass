@@ -4,6 +4,7 @@ import { Effect, Schema } from "effect";
 import { z } from "zod";
 
 import type { BankStoreService } from "@/bank-store";
+import { AccountIdSchema } from "@/domain/identifiers";
 import { InvalidRequestError } from "@/errors";
 
 const readOnlyAnnotations = {
@@ -15,6 +16,7 @@ const readOnlyAnnotations = {
 
 const accountOutputSchema = z.object({
   availableBalance: z.number().nullable(),
+  connectionId: z.string(),
   currency: z.string().nullable(),
   currentBalance: z.number().nullable(),
   dataUpdatedAt: z.string(),
@@ -23,6 +25,7 @@ const accountOutputSchema = z.object({
   id: z.string(),
   institution: z.string(),
   name: z.string(),
+  providerAccountId: z.string(),
   providerBalanceRefreshedAt: z.string().nullable(),
   providerId: z.string(),
   providerTransactionsRefreshedAt: z.string().nullable(),
@@ -38,13 +41,16 @@ const transactionOutputSchema = z.object({
   cardSuffix: z.string().nullable(),
   categoryName: z.string().nullable(),
   code: z.string().nullable(),
-  currency: z.string(),
+  connectionId: z.string(),
+  currency: z.string().nullable(),
   dataUpdatedAt: z.string(),
   description: z.string(),
   id: z.string(),
   merchantName: z.string().nullable(),
   otherAccount: z.string().nullable(),
   particulars: z.string().nullable(),
+  providerId: z.string(),
+  providerTransactionId: z.string(),
   providerUpdatedAt: z.string(),
   reference: z.string().nullable(),
   status: z.enum(["posted", "pending"]),
@@ -54,11 +60,13 @@ const transactionOutputSchema = z.object({
 });
 
 const syncStatusOutputSchema = z.object({
+  connectionId: z.string(),
   errorCode: z.string().nullable(),
   errorMessage: z.string().nullable(),
   lastAttemptAt: z.string().nullable(),
   lastProviderRefreshRequestedAt: z.string().nullable(),
   lastSuccessAt: z.string().nullable(),
+  providerId: z.string(),
   providerRefreshedAt: z.string().nullable(),
   startedAt: z.string().nullable(),
   status: z.string(),
@@ -118,6 +126,12 @@ const validateCursor = (cursor: string) =>
     try: () => Schema.decodeUnknownSync(CursorSchema)(JSON.parse(atob(cursor))),
   }).pipe(Effect.asVoid);
 
+const parseAccountId = (accountId: string) =>
+  Effect.try({
+    catch: () => new InvalidRequestError({ message: "accountId is invalid" }),
+    try: () => Schema.decodeUnknownSync(AccountIdSchema)(accountId),
+  });
+
 /**
  * Validate cursor and date ordering for MCP transaction queries.
  *
@@ -159,7 +173,8 @@ const createServer = (store: BankStoreService) => {
       inputSchema: z.object({}),
       outputSchema: z.array(accountOutputSchema),
     },
-    () => runTool(store.listAccounts)
+    () =>
+      runTool(store.listAccounts({ connectionId: null, providerId: null }))
   );
 
   server.registerTool(
@@ -180,15 +195,16 @@ const createServer = (store: BankStoreService) => {
     },
     ({ accountId }) =>
       runTool(
-        store.getAccount(accountId).pipe(
+        parseAccountId(accountId).pipe(
+          Effect.flatMap((id) => store.getAccount(id)),
           Effect.map((account) => ({
-            accountId,
-            available: account["availableBalance"],
-            currency: account["currency"],
-            current: account["currentBalance"],
-            dataUpdatedAt: account["dataUpdatedAt"],
-            providerRefreshedAt: account["providerBalanceRefreshedAt"],
-            syncedAt: account["syncedAt"],
+            accountId: account.id,
+            available: account.availableBalance,
+            currency: account.currency,
+            current: account.currentBalance,
+            dataUpdatedAt: account.dataUpdatedAt,
+            providerRefreshedAt: account.providerBalanceRefreshedAt,
+            syncedAt: account.syncedAt,
           }))
         )
       )
@@ -216,12 +232,19 @@ const createServer = (store: BankStoreService) => {
     ({ accountId, cursor, from, limit, status, to }) =>
       runTool(
         validateMcpTransactionQuery({ cursor, from, to }).pipe(
-          Effect.andThen(() =>
+          Effect.andThen(
+            accountId === undefined
+              ? Effect.succeed(null)
+              : parseAccountId(accountId)
+          ),
+          Effect.flatMap((parsedAccountId) =>
             store.listTransactions({
-              accountId: accountId ?? null,
+              accountId: parsedAccountId,
+              connectionId: null,
               cursor: cursor ?? null,
               from: from === undefined ? null : new Date(from).toISOString(),
               limit,
+              providerId: null,
               status,
               to: to === undefined ? null : new Date(to).toISOString(),
             })
@@ -235,11 +258,21 @@ const createServer = (store: BankStoreService) => {
     {
       annotations: readOnlyAnnotations,
       description:
-        "Get synchronization state and provider freshness timestamps",
+        "Get synchronization state and provider freshness for the primary connection",
       inputSchema: z.object({}),
       outputSchema: syncStatusOutputSchema,
     },
-    () => runTool(store.getSyncStatus)
+    () =>
+      runTool(
+        store.listSyncStatuses.pipe(
+          Effect.flatMap((statuses) => {
+            const status = statuses[0];
+            return status === undefined
+              ? Effect.fail(new InvalidRequestError({ message: "No connection is configured" }))
+              : Effect.succeed(status);
+          })
+        )
+      )
   );
 
   return server;
