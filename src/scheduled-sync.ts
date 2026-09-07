@@ -1,13 +1,18 @@
-import { Effect } from "effect";
+import { Effect, Result } from "effect";
 
 import type { ConnectionSyncOutcome } from "@/domain/sync";
 import type { SyncServiceService } from "@/sync-service";
+
+type FailedConnectionSync = Extract<
+  ConnectionSyncOutcome,
+  { readonly _tag: "Failure" }
+>;
 
 const isDeferralTag = (errorTag: string) =>
   errorTag === "RefreshCooldownError" || errorTag === "SyncInProgressError";
 
 const failureOutcome = (
-  original: Extract<ConnectionSyncOutcome, { readonly _tag: "Failure" }>,
+  original: FailedConnectionSync,
   errorTag: string
 ): ConnectionSyncOutcome => ({
   _tag: "Failure",
@@ -18,41 +23,47 @@ const failureOutcome = (
 
 const retryConnection = (
   service: SyncServiceService,
-  original: Extract<ConnectionSyncOutcome, { readonly _tag: "Failure" }>
+  original: FailedConnectionSync
 ) =>
-  service
-    .synchronizeConnection({
-      connectionId: original.connectionId,
-      refresh: "RequestIfSupported",
-    })
-    .pipe(
-      Effect.catch((refreshError) => {
-        if (isDeferralTag(refreshError._tag)) {
-          return Effect.succeed(failureOutcome(original, refreshError._tag));
-        }
-        return Effect.gen(function* readAvailableFallback() {
-          yield* Effect.logWarning(
-            "Scheduled refresh retry failed; reading current provider cache",
-            {
-              connectionId: original.connectionId,
-              errorTag: refreshError._tag,
-              providerId: original.providerId,
-            }
-          );
-          return yield* service
-            .synchronizeConnection({
-              connectionId: original.connectionId,
-              refresh: "ReadAvailable",
-            })
-            .pipe(
-              Effect.match({
-                onFailure: (error) => failureOutcome(original, error._tag),
-                onSuccess: (success): ConnectionSyncOutcome => success,
-              })
-            );
-        });
+  Effect.gen(function* retryFailedConnection() {
+    const refreshed = yield* Effect.result(
+      service.synchronizeConnection({
+        connectionId: original.connectionId,
+        refresh: "RequestIfSupported",
       })
     );
+    if (Result.isSuccess(refreshed)) {
+      return refreshed.success;
+    }
+    if (isDeferralTag(refreshed.failure._tag)) {
+      return failureOutcome(original, refreshed.failure._tag);
+    }
+
+    yield* Effect.logWarning(
+      "Scheduled refresh retry failed; reading current provider cache",
+      {
+        connectionId: original.connectionId,
+        errorTag: refreshed.failure._tag,
+        providerId: original.providerId,
+      }
+    );
+    return yield* service
+      .synchronizeConnection({
+        connectionId: original.connectionId,
+        refresh: "ReadAvailable",
+      })
+      .pipe(
+        Effect.match({
+          onFailure: (error) => failureOutcome(original, error._tag),
+          onSuccess: (success): ConnectionSyncOutcome => success,
+        })
+      );
+  });
+
+const isRetryableFailure = (
+  outcome: ConnectionSyncOutcome
+): outcome is FailedConnectionSync =>
+  outcome._tag === "Failure" && !isDeferralTag(outcome.errorTag);
 
 /**
  * Run scheduled synchronization across enabled connections with isolated retries.
@@ -66,14 +77,7 @@ export const synchronizeScheduled = (service: SyncServiceService) =>
     const first = yield* service.synchronizeEnabled({
       refresh: "RequestIfSupported",
     });
-    const retryable = first.filter(
-      (
-        outcome
-      ): outcome is Extract<
-        ConnectionSyncOutcome,
-        { readonly _tag: "Failure" }
-      > => outcome._tag === "Failure" && !isDeferralTag(outcome.errorTag)
-    );
+    const retryable = first.filter(isRetryableFailure);
 
     for (const outcome of first) {
       if (outcome._tag === "Failure" && isDeferralTag(outcome.errorTag)) {
@@ -95,12 +99,10 @@ export const synchronizeScheduled = (service: SyncServiceService) =>
     );
     yield* Effect.sleep("1 minute");
 
-    const retries = yield* Effect.forEach(
-      retryable,
-      (original) => retryConnection(service, original),
+    const retries = yield* Effect.all(
+      retryable.map((original) => retryConnection(service, original)),
       { concurrency: 4 }
     );
-
     const retriedIds = new Set(retryable.map((outcome) => outcome.connectionId));
     const retained: ConnectionSyncOutcome[] = [];
     for (const outcome of first) {
