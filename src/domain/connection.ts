@@ -31,7 +31,7 @@ export const BankConnectionSchema = Schema.Struct({
   id: ConnectionIdSchema,
   label: Schema.String.pipe(Schema.check(Schema.isMinLength(1))),
   lastSyncAt: Schema.NullOr(IsoDateTimeSchema),
-  metadata: Schema.Record(Schema.String, Schema.String),
+  metadata: Schema.Record({ key: Schema.String, value: Schema.String }),
   providerId: ProviderIdSchema,
   updatedAt: IsoDateTimeSchema,
 });
