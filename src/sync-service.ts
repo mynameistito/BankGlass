@@ -1,30 +1,43 @@
-import { Context, Effect, Layer, Result } from "effect";
+import {
+  Clock,
+  Context,
+  Duration,
+  Effect,
+  Layer,
+  Result,
+} from "effect";
 
-import { BankProvider } from "@/bank-provider";
-import type { BankProviderError } from "@/bank-provider";
 import { BankStore } from "@/bank-store";
-import { RefreshCooldownError } from "@/errors";
-import type { DatabaseError, SyncInProgressError } from "@/errors";
+import type { ConnectionId } from "@/domain/identifiers";
+import type {
+  ConnectionSyncOutcome,
+  ConnectionSyncSuccess,
+  SyncRefreshMode,
+} from "@/domain/sync";
+import {
+  RefreshCooldownError,
+} from "@/errors";
+import type {
+  DatabaseError,
+  NotFoundError,
+  SyncInProgressError,
+} from "@/errors";
+import type { ProviderNotRegisteredError } from "@/errors/provider-registry";
+import {
+  ProviderRegistry,
+  type BankProviderError,
+} from "@/provider-registry";
 
-/** Failures that can prevent a synchronization from completing. */
-type SyncError =
+/** Failures that can prevent one connection from synchronizing. */
+export type SyncError =
   | BankProviderError
   | DatabaseError
+  | NotFoundError
+  | ProviderNotRegisteredError
   | RefreshCooldownError
   | SyncInProgressError;
-/** Counts and freshness metadata produced by a successful synchronization. */
-interface SyncResult {
-  /** Timestamp at which the normalized snapshot was stored. */
-  readonly syncedAt: string;
-  /** Earliest provider freshness timestamp observed in the snapshot. */
-  readonly providerRefreshedAt: string | null;
-  /** Number of accounts stored. */
-  readonly accounts: number;
-  /** Number of posted transactions stored. */
-  readonly postedTransactions: number;
-  /** Number of pending transactions stored. */
-  readonly pendingTransactions: number;
-}
+
+const isPresent = (value: string | null): value is string => value !== null;
 const accountFreshness = (account: {
   readonly providerBalanceRefreshedAt: string | null;
   readonly providerTransactionsRefreshedAt: string | null;
@@ -32,120 +45,174 @@ const accountFreshness = (account: {
   account.providerBalanceRefreshedAt,
   account.providerTransactionsRefreshedAt,
 ];
-const isPresent = (value: string | null): value is string => value !== null;
-/** Application operation that coordinates provider refresh and persistence. */
+const toIso = (millis: number) => new Date(millis).toISOString();
+const errorTag = (error: SyncError): string => error._tag;
+
+/** Application operations that coordinate provider reads and connection-scoped persistence. */
 export interface SyncServiceService {
-  /** Synchronize cached data, optionally requesting a provider refresh first. */
-  readonly synchronize: (options: {
-    /** Whether the upstream provider should be asked to refresh. */
-    readonly requestProviderRefresh: boolean;
-  }) => Effect.Effect<SyncResult, SyncError>;
+  /** Synchronize one configured provider connection. */
+  readonly synchronizeConnection: (input: {
+    readonly connectionId: ConnectionId;
+    readonly refresh: SyncRefreshMode;
+  }) => Effect.Effect<ConnectionSyncSuccess, SyncError>;
+  /** Synchronize every enabled connection with bounded concurrency and isolated failures. */
+  readonly synchronizeEnabled: (input: {
+    readonly refresh: SyncRefreshMode;
+  }) => Effect.Effect<readonly ConnectionSyncOutcome[], DatabaseError>;
 }
-/** Effect service tag for synchronization operations. */
-export class SyncService extends Context.Service<
-  SyncService,
-  SyncServiceService
->()("@bankglass/SyncService") {}
+
+/** Effect service tag for synchronization application operations. */
+export class SyncService extends Context.Service<SyncService, SyncServiceService>()(
+  "@bankglass/SyncService"
+) {}
 
 /**
- * Construct the synchronization service from its timing policy.
+ * Construct connection-scoped synchronization policy.
  *
- * @param cooldownSeconds - Minimum interval between provider refresh requests.
- * @param lookbackDays - Number of days of posted transactions to reconcile.
- * @returns An Effect that constructs a `SyncService` implementation from the
- * services available in its environment.
+ * @param lookbackDays - Number of days of posted transactions reconciled on each sync.
+ * @returns A synchronization service using the application-owned provider registry and store.
  */
-export const makeSyncService = (
-  cooldownSeconds: number,
-  lookbackDays: number
-) =>
+export const makeSyncService = (lookbackDays: number) =>
   Effect.gen(function* buildSyncService() {
-    const provider = yield* BankProvider;
+    const registry = yield* ProviderRegistry;
     const store = yield* BankStore;
-    const synchronize = Effect.fn("SyncService.synchronize")(
-      function* synchronize(options: {
-        readonly requestProviderRefresh: boolean;
-      }) {
-        const startedAt = new Date().toISOString();
-        const providerRefreshAllowedBefore = options.requestProviderRefresh
-          ? new Date(Date.now() - cooldownSeconds * 1000).toISOString()
+
+    const synchronizeConnection = Effect.fn(
+      "SyncService.synchronizeConnection"
+    )(function* synchronizeConnection(input: {
+      readonly connectionId: ConnectionId;
+      readonly refresh: SyncRefreshMode;
+    }) {
+      const connection = yield* store.getConnection(input.connectionId);
+      const provider = yield* registry.get(connection.providerId);
+      const startedMillis = yield* Clock.currentTimeMillis;
+      const startedAt = toIso(startedMillis);
+      const explicitRefresh =
+        input.refresh === "RequestIfSupported" &&
+        provider.refresh._tag === "Explicit"
+          ? provider.refresh
           : null;
-        const leaseId = crypto.randomUUID();
-        const acquisition = yield* Effect.result(
-          store.acquireSync(startedAt, leaseId, providerRefreshAllowedBefore)
-        );
-        if (Result.isFailure(acquisition)) {
-          if (options.requestProviderRefresh) {
-            const status = yield* store.getSyncStatus;
-            if (status.lastProviderRefreshRequestedAt !== null) {
-              const retryAtMs =
-                Date.parse(status.lastProviderRefreshRequestedAt) +
-                cooldownSeconds * 1000;
-              if (retryAtMs > Date.now()) {
-                return yield* Effect.fail(
-                  new RefreshCooldownError({
-                    retryAt: new Date(retryAtMs).toISOString(),
-                  })
-                );
-              }
+      const refreshAllowedBefore =
+        explicitRefresh === null
+          ? null
+          : toIso(
+              startedMillis -
+                Duration.toMillis(explicitRefresh.minimumInterval)
+            );
+      const leaseId = crypto.randomUUID();
+      const acquisition = yield* Effect.result(
+        store.acquireSync(
+          connection.id,
+          startedAt,
+          leaseId,
+          refreshAllowedBefore
+        )
+      );
+      if (Result.isFailure(acquisition)) {
+        if (explicitRefresh !== null) {
+          const status = yield* store.getSyncStatus(connection.id);
+          if (status.lastProviderRefreshRequestedAt !== null) {
+            const retryAtMillis =
+              Date.parse(status.lastProviderRefreshRequestedAt) +
+              Duration.toMillis(explicitRefresh.minimumInterval);
+            if (retryAtMillis > startedMillis) {
+              return yield* Effect.fail(
+                new RefreshCooldownError({ retryAt: toIso(retryAtMillis) })
+              );
             }
           }
-          return yield* Effect.fail(acquisition.failure);
         }
-        const run = Effect.gen(function* run() {
-          if (options.requestProviderRefresh) {
-            yield* provider.requestRefresh;
-            yield* store.markRefreshRequested(startedAt, leaseId);
-            yield* Effect.sleep("5 seconds");
-          }
-          const start = new Date(
-            Date.now() - lookbackDays * 86_400_000
-          ).toISOString();
-          const [accounts, posted, pending] = yield* Effect.all(
-            [
-              provider.getAccounts,
-              provider.getTransactions({ start }),
-              provider.getPendingTransactions,
-            ],
-            { concurrency: 3 }
-          );
-          const syncedAt = new Date().toISOString();
-          yield* store.saveSnapshot({
-            accounts,
-            leaseId,
-            pending,
-            posted,
-            reconcilePostedFrom: start,
-            syncedAt,
-          });
-          const freshness = accounts
+        return yield* Effect.fail(acquisition.failure);
+      }
+
+      const run = Effect.gen(function* runConnectionSync() {
+        if (explicitRefresh !== null) {
+          yield* explicitRefresh.request(connection);
+          yield* store.markRefreshRequested(connection.id, startedAt, leaseId);
+          yield* Effect.sleep(explicitRefresh.propagationDelay);
+        }
+        const start = toIso(startedMillis - lookbackDays * 86_400_000);
+        const snapshot = yield* provider.readSnapshot({ connection, start });
+        const syncedMillis = yield* Clock.currentTimeMillis;
+        const syncedAt = toIso(syncedMillis);
+        yield* store.saveSnapshot({
+          ...snapshot,
+          connectionId: connection.id,
+          leaseId,
+          providerId: connection.providerId,
+          reconcilePostedFrom: start,
+          syncedAt,
+        });
+        const providerRefreshedAt =
+          snapshot.accounts
             .flatMap(accountFreshness)
             .filter(isPresent)
-            .toSorted();
-          const providerRefreshedAt = freshness.at(0) ?? null;
-          yield* store.completeSync(syncedAt, providerRefreshedAt, leaseId);
-          return {
-            accounts: accounts.length,
-            pendingTransactions: pending.length,
-            postedTransactions: posted.length,
-            providerRefreshedAt,
-            syncedAt,
-          };
-        });
-        return yield* run.pipe(
-          Effect.tapError((error) =>
-            store
-              .failSync(new Date().toISOString(), error._tag, leaseId)
-              .pipe(Effect.ignore)
-          )
+            .toSorted()
+            .at(0) ?? null;
+        yield* store.completeSync(
+          connection.id,
+          syncedAt,
+          providerRefreshedAt,
+          leaseId
         );
-      }
-    );
-    return SyncService.of({ synchronize });
+        return {
+          _tag: "Success",
+          accounts: snapshot.accounts.length,
+          connectionId: connection.id,
+          pendingTransactions: snapshot.pending.length,
+          postedTransactions: snapshot.posted.length,
+          providerId: connection.providerId,
+          providerRefreshedAt,
+          syncedAt,
+        } satisfies ConnectionSyncSuccess;
+      });
+
+      return yield* run.pipe(
+        Effect.tapError((error) =>
+          Clock.currentTimeMillis.pipe(
+            Effect.flatMap((millis) =>
+              store.failSync(
+                connection.id,
+                toIso(millis),
+                errorTag(error),
+                leaseId
+              )
+            ),
+            Effect.ignore
+          )
+        )
+      );
+    });
+
+    const synchronizeEnabled: SyncServiceService["synchronizeEnabled"] = (
+      input
+    ) =>
+      Effect.gen(function* synchronizeAllEnabled() {
+        const connections = yield* store.listConnections;
+        return yield* Effect.forEach(
+          connections.filter((connection) => connection.enabled),
+          (connection) =>
+            synchronizeConnection({
+              connectionId: connection.id,
+              refresh: input.refresh,
+            }).pipe(
+              Effect.match({
+                onFailure: (error): ConnectionSyncOutcome => ({
+                  _tag: "Failure",
+                  connectionId: connection.id,
+                  errorTag: errorTag(error),
+                  providerId: connection.providerId,
+                }),
+                onSuccess: (success): ConnectionSyncOutcome => success,
+              })
+            ),
+          { concurrency: 4 }
+        );
+      });
+
+    return SyncService.of({ synchronizeConnection, synchronizeEnabled });
   });
 
-/** Provide a live synchronization service with the supplied timing policy. */
-export const syncServiceLive = (
-  cooldownSeconds: number,
-  lookbackDays: number
-) => Layer.effect(SyncService, makeSyncService(cooldownSeconds, lookbackDays));
+/** Provide the synchronization application service with its lookback policy. */
+export const syncServiceLive = (lookbackDays: number) =>
+  Layer.effect(SyncService, makeSyncService(lookbackDays));

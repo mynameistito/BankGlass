@@ -1,24 +1,22 @@
 import { Context, Duration, Effect, Layer } from "effect";
 
+import type { ProviderAccount } from "@/domain/account";
 import type { BankConnection } from "@/domain/connection";
 import type { ProviderId } from "@/domain/identifiers";
-import type {
-  ProviderAccount,
-} from "@/domain/account";
 import type {
   ProviderPendingTransaction,
   ProviderPostedTransaction,
 } from "@/domain/transaction";
-import {
-  DuplicateProviderRegistrationError,
-  ProviderNotRegisteredError,
-} from "@/errors/provider-registry";
 import type {
   AuthenticationError,
   InvalidProviderResponseError,
   ProviderRateLimitError,
   ProviderUnavailableError,
 } from "@/errors";
+import {
+  DuplicateProviderRegistrationError,
+  ProviderNotRegisteredError,
+} from "@/errors/provider-registry";
 
 /** Failures that may cross a banking-provider adapter boundary. */
 export type BankProviderError =
@@ -26,6 +24,13 @@ export type BankProviderError =
   | ProviderRateLimitError
   | ProviderUnavailableError
   | InvalidProviderResponseError;
+
+/** Domain-shaped data returned by one provider read operation. */
+export interface ProviderReadSnapshot {
+  readonly accounts: readonly ProviderAccount[];
+  readonly pending: readonly ProviderPendingTransaction[];
+  readonly posted: readonly ProviderPostedTransaction[];
+}
 
 /** Provider-owned explicit refresh operation and its required timing policy. */
 export interface ExplicitRefreshStrategy {
@@ -46,14 +51,9 @@ export type RefreshStrategy =
   | { readonly _tag: "ProviderManaged" }
   | { readonly _tag: "Unavailable" };
 
-/** Pending-transaction operation exposed only by providers that implement it. */
+/** Whether the provider can expose pending transactions in its normalized snapshot. */
 export type PendingTransactionsStrategy =
-  | {
-      readonly _tag: "Available";
-      readonly read: (
-        connection: BankConnection
-      ) => Effect.Effect<readonly ProviderPendingTransaction[], BankProviderError>;
-    }
+  | { readonly _tag: "Available" }
   | { readonly _tag: "Unavailable" };
 
 /** Application-owned contract implemented by one bundled banking-data adapter. */
@@ -62,17 +62,13 @@ export interface BankProviderAdapter {
   readonly displayName: string;
   /** Stable BankGlass provider identifier. */
   readonly id: ProviderId;
-  /** Read and normalize accounts for one configured connection. */
-  readonly readAccounts: (
-    connection: BankConnection
-  ) => Effect.Effect<readonly ProviderAccount[], BankProviderError>;
-  /** Read and normalize posted transactions for one configured connection. */
-  readonly readPostedTransactions: (input: {
-    readonly connection: BankConnection;
-    readonly start: string | null;
-  }) => Effect.Effect<readonly ProviderPostedTransaction[], BankProviderError>;
   /** Pending-transaction behavior for this provider. */
   readonly pendingTransactions: PendingTransactionsStrategy;
+  /** Read and normalize one connection without exposing vendor pagination or schemas. */
+  readonly readSnapshot: (input: {
+    readonly connection: BankConnection;
+    readonly start: string | null;
+  }) => Effect.Effect<ProviderReadSnapshot, BankProviderError>;
   /** Upstream freshness behavior for this provider. */
   readonly refresh: RefreshStrategy;
 }
@@ -124,6 +120,3 @@ export const makeProviderRegistry = (providers: readonly BankProviderAdapter[]) 
 /** Provide a validated provider registry as an Effect layer. */
 export const providerRegistryLayer = (providers: readonly BankProviderAdapter[]) =>
   Layer.effect(ProviderRegistry, makeProviderRegistry(providers));
-
-/** Create a duration from whole seconds for provider refresh metadata. */
-export const refreshSeconds = (seconds: number) => Duration.seconds(seconds);
