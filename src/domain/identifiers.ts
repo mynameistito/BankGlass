@@ -27,19 +27,13 @@ export type AccountId = typeof AccountIdSchema.Type;
 export const TransactionIdSchema = NonEmptyIdentifier.pipe(
   Schema.brand("TransactionId")
 );
-/** BankGlass-local identifier for a transaction. */
-export type TransactionId = typeof TransactionIdSchema.Type;
 
 /** Account identifier assigned by one upstream provider connection. */
 export const ProviderAccountIdSchema = NonEmptyIdentifier.pipe(
   Schema.brand("ProviderAccountId")
 );
-/** Account identifier assigned by one upstream provider connection. */
-export type ProviderAccountId = typeof ProviderAccountIdSchema.Type;
 
 /** Transaction identifier assigned or derived within one upstream provider connection. */
 export const ProviderTransactionIdSchema = NonEmptyIdentifier.pipe(
   Schema.brand("ProviderTransactionId")
 );
-/** Transaction identifier assigned or derived within one upstream provider connection. */
-export type ProviderTransactionId = typeof ProviderTransactionIdSchema.Type;
