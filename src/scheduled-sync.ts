@@ -16,6 +16,44 @@ const failureOutcome = (
   providerId: original.providerId,
 });
 
+const retryConnection = (
+  service: SyncServiceService,
+  original: Extract<ConnectionSyncOutcome, { readonly _tag: "Failure" }>
+) =>
+  service
+    .synchronizeConnection({
+      connectionId: original.connectionId,
+      refresh: "RequestIfSupported",
+    })
+    .pipe(
+      Effect.catch((refreshError) => {
+        if (isDeferralTag(refreshError._tag)) {
+          return Effect.succeed(failureOutcome(original, refreshError._tag));
+        }
+        return Effect.gen(function* readAvailableFallback() {
+          yield* Effect.logWarning(
+            "Scheduled refresh retry failed; reading current provider cache",
+            {
+              connectionId: original.connectionId,
+              errorTag: refreshError._tag,
+              providerId: original.providerId,
+            }
+          );
+          return yield* service
+            .synchronizeConnection({
+              connectionId: original.connectionId,
+              refresh: "ReadAvailable",
+            })
+            .pipe(
+              Effect.match({
+                onFailure: (error) => failureOutcome(original, error._tag),
+                onSuccess: (success): ConnectionSyncOutcome => success,
+              })
+            );
+        });
+      })
+    );
+
 /**
  * Run scheduled synchronization across enabled connections with isolated retries.
  *
@@ -59,49 +97,16 @@ export const synchronizeScheduled = (service: SyncServiceService) =>
 
     const retries = yield* Effect.forEach(
       retryable,
-      (original) =>
-        service
-          .synchronizeConnection({
-            connectionId: original.connectionId,
-            refresh: "RequestIfSupported",
-          })
-          .pipe(
-            Effect.catchAll((refreshError) => {
-              if (isDeferralTag(refreshError._tag)) {
-                return Effect.succeed(
-                  failureOutcome(original, refreshError._tag)
-                );
-              }
-              return Effect.gen(function* readAvailableFallback() {
-                yield* Effect.logWarning(
-                  "Scheduled refresh retry failed; reading current provider cache",
-                  {
-                    connectionId: original.connectionId,
-                    errorTag: refreshError._tag,
-                    providerId: original.providerId,
-                  }
-                );
-                return yield* service
-                  .synchronizeConnection({
-                    connectionId: original.connectionId,
-                    refresh: "ReadAvailable",
-                  })
-                  .pipe(
-                    Effect.match({
-                      onFailure: (error) =>
-                        failureOutcome(original, error._tag),
-                      onSuccess: (success): ConnectionSyncOutcome => success,
-                    })
-                  );
-              });
-            })
-          ),
+      (original) => retryConnection(service, original),
       { concurrency: 4 }
     );
 
     const retriedIds = new Set(retryable.map((outcome) => outcome.connectionId));
-    return [
-      ...first.filter((outcome) => !retriedIds.has(outcome.connectionId)),
-      ...retries,
-    ];
+    const retained: ConnectionSyncOutcome[] = [];
+    for (const outcome of first) {
+      if (!retriedIds.has(outcome.connectionId)) {
+        retained.push(outcome);
+      }
+    }
+    return [...retained, ...retries];
   });
