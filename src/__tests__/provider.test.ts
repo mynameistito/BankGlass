@@ -6,7 +6,6 @@ import { ConnectionIdSchema } from "@/domain/identifiers";
 import {
   AkahuProviderId,
   makeAkahuProvider,
-  parseAkahuAccounts,
 } from "@/providers/akahu/provider";
 
 const now = "2026-08-26T00:00:00.000Z";
@@ -48,42 +47,63 @@ const explicitRefresh = (provider: ReturnType<typeof makeAkahuProvider>) => {
 
 describe("Akahu provider boundary", () => {
   it("decodes a valid account without assigning a BankGlass-local ID", async () => {
+    const provider = makeProvider((input) => {
+      const url = String(input);
+      if (url.endsWith("/accounts")) {
+        return Promise.resolve(
+          Response.json({
+            items: [
+              {
+                _id: "acc_example",
+                balance: {
+                  available: 80.25,
+                  currency: "NZD",
+                  current: 100.5,
+                },
+                connection: { name: "BNZ" },
+                formatted_account: "02-0000-0000000-00",
+                meta: { holder: "Test Person" },
+                name: "Everyday",
+                refreshed: { balance: now, transactions: now },
+                status: "ACTIVE",
+                type: "CHECKING",
+              },
+            ],
+            success: true,
+          })
+        );
+      }
+      return Promise.resolve(Response.json({ items: [], success: true }));
+    });
+
     const result = await Effect.runPromise(
-      parseAkahuAccounts(
-        {
-          items: [
-            {
-              _id: "acc_example",
-              balance: { available: 80.25, currency: "NZD", current: 100.5 },
-              connection: { name: "BNZ" },
-              formatted_account: "02-0000-0000000-00",
-              meta: { holder: "Test Person" },
-              name: "Everyday",
-              refreshed: { balance: now, transactions: now },
-              status: "ACTIVE",
-              type: "CHECKING",
-            },
-          ],
-          success: true,
-        },
-        now
-      )
+      provider.readSnapshot({ connection, start: null })
     );
-    expect(result[0]).toMatchObject({
+    const [account] = result.accounts;
+
+    expect(account).toMatchObject({
       currentBalance: 100.5,
       institution: "BNZ",
       providerAccountId: "acc_example",
       status: "active",
     });
-    expect(result[0]).not.toHaveProperty("id");
+    expect(account).not.toHaveProperty("id");
   });
 
   it("rejects malformed provider data as a typed error", async () => {
+    const provider = makeProvider((input) => {
+      const url = String(input);
+      return Promise.resolve(
+        url.endsWith("/accounts")
+          ? Response.json({ items: [{ _id: 1 }], success: true })
+          : Response.json({ items: [], success: true })
+      );
+    });
+
     const error = await Effect.runPromise(
-      Effect.flip(
-        parseAkahuAccounts({ items: [{ _id: 1 }], success: true }, now)
-      )
+      Effect.flip(provider.readSnapshot({ connection, start: null }))
     );
+
     expect(error._tag).toBe("InvalidProviderResponseError");
   });
 
