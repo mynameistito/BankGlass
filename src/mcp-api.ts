@@ -173,8 +173,7 @@ const createServer = (store: BankStoreService) => {
       inputSchema: z.object({}),
       outputSchema: z.array(accountOutputSchema),
     },
-    () =>
-      runTool(store.listAccounts({ connectionId: null, providerId: null }))
+    () => runTool(store.listAccounts({ connectionId: null, providerId: null }))
   );
 
   server.registerTool(

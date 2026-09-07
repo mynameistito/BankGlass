@@ -17,7 +17,8 @@ import type { ProviderPostedTransaction } from "@/domain/transaction";
 const time = "2026-08-26T00:00:00.000Z";
 const later = "2026-08-26T00:01:00.000Z";
 const akahuProviderId = Schema.decodeUnknownSync(ProviderIdSchema)("akahu");
-const simplefinProviderId = Schema.decodeUnknownSync(ProviderIdSchema)("simplefin");
+const simplefinProviderId =
+  Schema.decodeUnknownSync(ProviderIdSchema)("simplefin");
 const akahuConnectionId = Schema.decodeUnknownSync(ConnectionIdSchema)(
   "connection_akahu_default"
 );
@@ -162,7 +163,9 @@ describe("Durable Object banking persistence", () => {
     );
 
     expect(secondAccounts[0]?.id).toBe(firstAccounts[0]?.id);
-    expect(secondTransactions.items[0]?.id).toBe(firstTransactions.items[0]?.id);
+    expect(secondTransactions.items[0]?.id).toBe(
+      firstTransactions.items[0]?.id
+    );
   });
 
   it("allows identical upstream IDs in different provider connections", async () => {

@@ -127,7 +127,12 @@ describe("bank store schema migration", () => {
         )
         .one();
 
-      expect({ connection, migratedAccount, migratedTransaction, sync }).toStrictEqual({
+      expect({
+        connection,
+        migratedAccount,
+        migratedTransaction,
+        sync,
+      }).toStrictEqual({
         connection: {
           id: "connection_akahu_default",
           lastSyncAt: time,

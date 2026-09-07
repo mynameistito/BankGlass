@@ -2,10 +2,7 @@ import { Effect, Fiber, Schema } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 
-import {
-  ConnectionIdSchema,
-  ProviderIdSchema,
-} from "@/domain/identifiers";
+import { ConnectionIdSchema, ProviderIdSchema } from "@/domain/identifiers";
 import { ProviderUnavailableError } from "@/errors";
 import { synchronizeScheduled } from "@/scheduled-sync";
 import type { SyncServiceService } from "@/sync-service";
@@ -68,7 +65,9 @@ describe("scheduled synchronization policy", () => {
 
     const outcomes = await Effect.runPromise(
       Effect.gen(function* runScheduled() {
-        const fiber = yield* synchronizeScheduled(service).pipe(Effect.forkChild);
+        const fiber = yield* synchronizeScheduled(service).pipe(
+          Effect.forkChild
+        );
         yield* TestClock.adjust("1 minute");
         return yield* Fiber.join(fiber);
       }).pipe(Effect.provide(TestClock.layer()))
@@ -98,16 +97,15 @@ describe("scheduled synchronization policy", () => {
 
     const outcomes = await Effect.runPromise(
       Effect.gen(function* runScheduled() {
-        const fiber = yield* synchronizeScheduled(service).pipe(Effect.forkChild);
+        const fiber = yield* synchronizeScheduled(service).pipe(
+          Effect.forkChild
+        );
         yield* TestClock.adjust("1 minute");
         return yield* Fiber.join(fiber);
       }).pipe(Effect.provide(TestClock.layer()))
     );
 
-    expect(refreshModes).toStrictEqual([
-      "RequestIfSupported",
-      "ReadAvailable",
-    ]);
+    expect(refreshModes).toStrictEqual(["RequestIfSupported", "ReadAvailable"]);
     expect(outcomes).toStrictEqual([success]);
   });
 });

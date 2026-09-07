@@ -1,11 +1,4 @@
-import {
-  Clock,
-  Duration,
-  Effect,
-  Redacted,
-  Schedule,
-  Schema,
-} from "effect";
+import { Clock, Duration, Effect, Redacted, Schedule, Schema } from "effect";
 
 import type { ProviderAccount } from "@/domain/account";
 import {
@@ -38,9 +31,8 @@ const maxTransactionPages = 100;
 const maxPostedTransactions = 750;
 
 /** Stable provider ID for the bundled Akahu adapter. */
-export const AkahuProviderId = Schema.decodeUnknownSync(ProviderIdSchema)(
-  "akahu"
-);
+export const AkahuProviderId =
+  Schema.decodeUnknownSync(ProviderIdSchema)("akahu");
 
 /** Credentials and transport options for the Akahu Personal App API. */
 export interface AkahuConfig {
@@ -80,7 +72,7 @@ const normalizeAccounts = (
     type: item.type.toLowerCase(),
   }));
 
-const pendingId = (item: typeof PendingResponse.Type["items"][number]) =>
+const pendingId = (item: (typeof PendingResponse.Type)["items"][number]) =>
   Effect.promise(() =>
     crypto.subtle.digest(
       "SHA-256",
@@ -152,7 +144,7 @@ const parseResponseJson = <A>(
 };
 
 const normalizePendingTransaction = (
-  item: typeof PendingResponse.Type["items"][number],
+  item: (typeof PendingResponse.Type)["items"][number],
   currencyByAccount: ReadonlyMap<string, string | null>
 ) =>
   Effect.gen(function* normalizePending() {
@@ -242,7 +234,11 @@ export const makeAkahuProvider = (
 
   const readAccounts = Effect.gen(function* readAccounts() {
     const now = yield* nowIso;
-    const response = yield* request("getAccounts", "/accounts", AccountsResponse);
+    const response = yield* request(
+      "getAccounts",
+      "/accounts",
+      AccountsResponse
+    );
     return normalizeAccounts(response, now);
   });
 
@@ -362,13 +358,15 @@ export const makeAkahuProvider = (
       Effect.gen(function* readSnapshot() {
         const accounts = yield* readAccounts;
         const currencyByAccount = new Map(
-          accounts.map((account) => [
-            account.providerAccountId,
-            account.currency,
-          ] as const)
+          accounts.map(
+            (account) => [account.providerAccountId, account.currency] as const
+          )
         );
         const [posted, pending] = yield* Effect.all(
-          [readPosted(start, currencyByAccount), readPending(currencyByAccount)],
+          [
+            readPosted(start, currencyByAccount),
+            readPending(currencyByAccount),
+          ],
           { concurrency: 2 }
         );
         return { accounts, pending, posted };

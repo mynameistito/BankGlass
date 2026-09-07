@@ -47,4 +47,6 @@ interface ConnectionSyncFailure {
 }
 
 /** Isolated result of synchronizing one enabled connection. */
-export type ConnectionSyncOutcome = ConnectionSyncSuccess | ConnectionSyncFailure;
+export type ConnectionSyncOutcome =
+  | ConnectionSyncSuccess
+  | ConnectionSyncFailure;

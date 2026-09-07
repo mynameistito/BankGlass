@@ -3,10 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import type { BankConnection } from "@/domain/connection";
 import { ConnectionIdSchema } from "@/domain/identifiers";
-import {
-  AkahuProviderId,
-  makeAkahuProvider,
-} from "@/providers/akahu/provider";
+import { AkahuProviderId, makeAkahuProvider } from "@/providers/akahu/provider";
 
 const now = "2026-08-26T00:00:00.000Z";
 const connection: BankConnection = {
@@ -142,9 +139,7 @@ describe("Akahu provider boundary", () => {
       return Promise.resolve(Response.json({ items: [], success: true }));
     });
 
-    await Effect.runPromise(
-      provider.readSnapshot({ connection, start: null })
-    );
+    await Effect.runPromise(provider.readSnapshot({ connection, start: null }));
 
     expect(accountCalls).toBe(3);
   });

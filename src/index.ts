@@ -124,9 +124,7 @@ const run = (request: Request, env: WorkerEnv) =>
         });
       }
       return yield* routeRequest(request, config);
-    }).pipe(
-      Effect.provide(programLayer(env, Number(config.syncLookbackDays)))
-    );
+    }).pipe(Effect.provide(programLayer(env, Number(config.syncLookbackDays))));
   }).pipe(
     Effect.catchTag("UnauthorizedAccessRequestError", () =>
       Effect.succeed(accessDeniedResponse())
@@ -150,7 +148,8 @@ const run = (request: Request, env: WorkerEnv) =>
 
 export default {
   /** Handle an authenticated HTTP or MCP request. */
-  fetch: (request: Request, env: WorkerEnv) => Effect.runPromise(run(request, env)),
+  fetch: (request: Request, env: WorkerEnv) =>
+    Effect.runPromise(run(request, env)),
   /** Run the scheduled synchronization across every enabled provider connection. */
   scheduled: (
     _controller: ScheduledController,
@@ -161,9 +160,7 @@ export default {
       yield* parseConfig(env);
       const service = yield* SyncService;
       return yield* synchronizeScheduled(service);
-    }).pipe(
-      Effect.provide(programLayer(env, Number(env.SYNC_LOOKBACK_DAYS)))
-    );
+    }).pipe(Effect.provide(programLayer(env, Number(env.SYNC_LOOKBACK_DAYS))));
     const completion = Effect.gen(function* scheduledCompletion() {
       const result = yield* Effect.result(sync);
       if (Result.isFailure(result)) {

@@ -175,7 +175,10 @@ const routeRequestProgram = (request: Request, config: RuntimeConfig) =>
     }
     if (request.method === "GET" && url.pathname === "/v1/accounts") {
       return json({
-        data: yield* store.listAccounts({ connectionId: null, providerId: null }),
+        data: yield* store.listAccounts({
+          connectionId: null,
+          providerId: null,
+        }),
       });
     }
     if (request.method === "GET" && url.pathname === "/v1/transactions") {

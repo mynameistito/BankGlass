@@ -433,7 +433,9 @@ const saveSnapshotRows = (sql: SqlStorage, snapshot: ProviderSnapshot) => {
     )
     .toArray();
   if (connection?.providerId !== snapshot.providerId) {
-    throw new Error("Snapshot provider does not match the configured connection");
+    throw new Error(
+      "Snapshot provider does not match the configured connection"
+    );
   }
   const hasLease =
     sql
@@ -626,9 +628,9 @@ const deleteConnection: CommandHandler = (sql, args) => {
 };
 
 const listAccounts: CommandHandler = (sql, args) => {
-  const [query] = Schema.decodeUnknownSync(
-    Schema.Tuple([AccountQuerySchema])
-  )(args);
+  const [query] = Schema.decodeUnknownSync(Schema.Tuple([AccountQuerySchema]))(
+    args
+  );
   const where: string[] = [];
   const values: unknown[] = [];
   if (query.connectionId !== null) {
@@ -651,9 +653,7 @@ const listAccounts: CommandHandler = (sql, args) => {
 
 const getAccount: CommandHandler = (sql, args) => {
   const [id] = Schema.decodeUnknownSync(Schema.Tuple([AccountIdSchema]))(args);
-  const [row] = sql
-    .exec<SqlRow>(`${accountSelect} WHERE id=?`, id)
-    .toArray();
+  const [row] = sql.exec<SqlRow>(`${accountSelect} WHERE id=?`, id).toArray();
   return row === undefined
     ? { error: "not-found", ok: false }
     : { ok: true, value: rowAccount(row) };
@@ -753,9 +753,7 @@ const acquireSync: CommandHandler = (sql, args) => {
     providerRefreshAllowedBefore,
     providerRefreshAllowedBefore
   );
-  return result.rowsWritten === 1
-    ? { ok: true }
-    : { error: "sync", ok: false };
+  return result.rowsWritten === 1 ? { ok: true } : { error: "sync", ok: false };
 };
 
 const updateLease = (
@@ -764,9 +762,7 @@ const updateLease = (
   args: readonly unknown[]
 ): Reply => {
   const result = sql.exec(query, ...args);
-  return result.rowsWritten === 1
-    ? { ok: true }
-    : { error: "sync", ok: false };
+  return result.rowsWritten === 1 ? { ok: true } : { error: "sync", ok: false };
 };
 
 const markRefreshRequested: CommandHandler = (sql, args) => {
@@ -884,9 +880,8 @@ const commandHandlers = {
   saveSnapshot,
 } satisfies Record<string, CommandHandler>;
 
-const isCommandName = (
-  name: string
-): name is keyof typeof commandHandlers => name in commandHandlers;
+const isCommandName = (name: string): name is keyof typeof commandHandlers =>
+  name in commandHandlers;
 
 /** Durable Object implementation of the SQLite-backed BankGlass store. */
 export class BankStoreDO extends DurableObject {
@@ -894,7 +889,9 @@ export class BankStoreDO extends DurableObject {
   constructor(ctx: DurableObjectState, env: Cloudflare.Env) {
     super(ctx, env);
     ctx.blockConcurrencyWhile(() => {
-      ctx.storage.transactionSync(() => migrateBankStoreSchema(ctx.storage.sql));
+      ctx.storage.transactionSync(() =>
+        migrateBankStoreSchema(ctx.storage.sql)
+      );
       return Promise.resolve();
     });
   }

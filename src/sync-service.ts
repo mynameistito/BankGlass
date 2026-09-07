@@ -100,11 +100,7 @@ const providerFreshness = (
     readonly providerTransactionsRefreshedAt: string | null;
   }[]
 ) =>
-  accounts
-    .flatMap(accountFreshness)
-    .filter(isPresent)
-    .toSorted()
-    .at(0) ?? null;
+  accounts.flatMap(accountFreshness).filter(isPresent).toSorted().at(0) ?? null;
 
 const connectionFailureOutcome = (
   connection: BankConnection,
@@ -121,89 +117,89 @@ const makeSynchronizeConnection = (
   registry: ProviderRegistryService,
   lookbackDays: number
 ): SynchronizeConnection =>
-  Effect.fn("SyncService.synchronizeConnection")(function* synchronizeConnection(
-    input: {
+  Effect.fn("SyncService.synchronizeConnection")(
+    function* synchronizeConnection(input: {
       readonly connectionId: ConnectionId;
       readonly refresh: SyncRefreshMode;
-    }
-  ) {
-    const connection = yield* store.getConnection(input.connectionId);
-    const provider = yield* registry.get(connection.providerId);
-    const startedMillis = yield* Clock.currentTimeMillis;
-    const startedAt = toIso(startedMillis);
-    const refresh = explicitRefreshFor(input.refresh, provider);
-    const leaseId = crypto.randomUUID();
-    const acquisition = yield* Effect.result(
-      store.acquireSync(
-        connection.id,
-        startedAt,
-        leaseId,
-        refreshAllowedBefore(startedMillis, refresh)
-      )
-    );
-    if (Result.isFailure(acquisition)) {
-      return yield* failWithCooldownWhenApplicable(
-        store,
-        connection,
-        refresh,
-        startedMillis,
-        acquisition.failure
-      );
-    }
-
-    const run = Effect.gen(function* persistProviderSnapshot() {
-      if (refresh !== null) {
-        yield* refresh.request(connection);
-        yield* store.markRefreshRequested(connection.id, startedAt, leaseId);
-        yield* Effect.sleep(refresh.propagationDelay);
-      }
-      const start = toIso(startedMillis - lookbackDays * 86_400_000);
-      const snapshot = yield* provider.readSnapshot({ connection, start });
-      const syncedMillis = yield* Clock.currentTimeMillis;
-      const syncedAt = toIso(syncedMillis);
-      yield* store.saveSnapshot({
-        ...snapshot,
-        connectionId: connection.id,
-        leaseId,
-        providerId: connection.providerId,
-        reconcilePostedFrom: start,
-        syncedAt,
-      });
-      const providerRefreshedAt = providerFreshness(snapshot.accounts);
-      yield* store.completeSync(
-        connection.id,
-        syncedAt,
-        providerRefreshedAt,
-        leaseId
-      );
-      return {
-        _tag: "Success",
-        accounts: snapshot.accounts.length,
-        connectionId: connection.id,
-        pendingTransactions: snapshot.pending.length,
-        postedTransactions: snapshot.posted.length,
-        providerId: connection.providerId,
-        providerRefreshedAt,
-        syncedAt,
-      } satisfies ConnectionSyncSuccess;
-    });
-
-    return yield* run.pipe(
-      Effect.tapError((error) =>
-        Clock.currentTimeMillis.pipe(
-          Effect.flatMap((millis) =>
-            store.failSync(
-              connection.id,
-              toIso(millis),
-              errorTag(error),
-              leaseId
-            )
-          ),
-          Effect.ignore
+    }) {
+      const connection = yield* store.getConnection(input.connectionId);
+      const provider = yield* registry.get(connection.providerId);
+      const startedMillis = yield* Clock.currentTimeMillis;
+      const startedAt = toIso(startedMillis);
+      const refresh = explicitRefreshFor(input.refresh, provider);
+      const leaseId = crypto.randomUUID();
+      const acquisition = yield* Effect.result(
+        store.acquireSync(
+          connection.id,
+          startedAt,
+          leaseId,
+          refreshAllowedBefore(startedMillis, refresh)
         )
-      )
-    );
-  });
+      );
+      if (Result.isFailure(acquisition)) {
+        return yield* failWithCooldownWhenApplicable(
+          store,
+          connection,
+          refresh,
+          startedMillis,
+          acquisition.failure
+        );
+      }
+
+      const run = Effect.gen(function* persistProviderSnapshot() {
+        if (refresh !== null) {
+          yield* refresh.request(connection);
+          yield* store.markRefreshRequested(connection.id, startedAt, leaseId);
+          yield* Effect.sleep(refresh.propagationDelay);
+        }
+        const start = toIso(startedMillis - lookbackDays * 86_400_000);
+        const snapshot = yield* provider.readSnapshot({ connection, start });
+        const syncedMillis = yield* Clock.currentTimeMillis;
+        const syncedAt = toIso(syncedMillis);
+        yield* store.saveSnapshot({
+          ...snapshot,
+          connectionId: connection.id,
+          leaseId,
+          providerId: connection.providerId,
+          reconcilePostedFrom: start,
+          syncedAt,
+        });
+        const providerRefreshedAt = providerFreshness(snapshot.accounts);
+        yield* store.completeSync(
+          connection.id,
+          syncedAt,
+          providerRefreshedAt,
+          leaseId
+        );
+        return {
+          _tag: "Success",
+          accounts: snapshot.accounts.length,
+          connectionId: connection.id,
+          pendingTransactions: snapshot.pending.length,
+          postedTransactions: snapshot.posted.length,
+          providerId: connection.providerId,
+          providerRefreshedAt,
+          syncedAt,
+        } satisfies ConnectionSyncSuccess;
+      });
+
+      return yield* run.pipe(
+        Effect.tapError((error) =>
+          Clock.currentTimeMillis.pipe(
+            Effect.flatMap((millis) =>
+              store.failSync(
+                connection.id,
+                toIso(millis),
+                errorTag(error),
+                leaseId
+              )
+            ),
+            Effect.ignore
+          )
+        )
+      );
+    }
+  );
 
 const synchronizeOneEnabled = (
   synchronizeConnection: SynchronizeConnection,
@@ -217,10 +213,11 @@ const synchronizeOneEnabled = (
     })
   );
 
-const makeSynchronizeEnabled = (
-  store: BankStoreService,
-  synchronizeConnection: SynchronizeConnection
-): SyncServiceService["synchronizeEnabled"] =>
+const makeSynchronizeEnabled =
+  (
+    store: BankStoreService,
+    synchronizeConnection: SynchronizeConnection
+  ): SyncServiceService["synchronizeEnabled"] =>
   (input) =>
     Effect.gen(function* synchronizeAllEnabled() {
       const connections = yield* store.listConnections;
@@ -253,9 +250,10 @@ export interface SyncServiceService {
 }
 
 /** Effect service tag for synchronization application operations. */
-export class SyncService extends Context.Service<SyncService, SyncServiceService>()(
-  "@bankglass/SyncService"
-) {}
+export class SyncService extends Context.Service<
+  SyncService,
+  SyncServiceService
+>()("@bankglass/SyncService") {}
 
 /**
  * Construct connection-scoped synchronization policy.

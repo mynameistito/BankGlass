@@ -111,5 +111,6 @@ const makeProviderRegistry = (providers: readonly BankProviderAdapter[]) =>
   });
 
 /** Provide a validated provider registry as an Effect layer. */
-export const providerRegistryLayer = (providers: readonly BankProviderAdapter[]) =>
-  Layer.effect(ProviderRegistry, makeProviderRegistry(providers));
+export const providerRegistryLayer = (
+  providers: readonly BankProviderAdapter[]
+) => Layer.effect(ProviderRegistry, makeProviderRegistry(providers));

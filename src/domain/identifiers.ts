@@ -19,7 +19,9 @@ export const ConnectionIdSchema = NonEmptyIdentifier.pipe(
 export type ConnectionId = typeof ConnectionIdSchema.Type;
 
 /** BankGlass-local identifier for an account. */
-export const AccountIdSchema = NonEmptyIdentifier.pipe(Schema.brand("AccountId"));
+export const AccountIdSchema = NonEmptyIdentifier.pipe(
+  Schema.brand("AccountId")
+);
 /** BankGlass-local identifier for an account. */
 export type AccountId = typeof AccountIdSchema.Type;
 

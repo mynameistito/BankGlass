@@ -103,7 +103,9 @@ export const synchronizeScheduled = (service: SyncServiceService) =>
       retryable.map((original) => retryConnection(service, original)),
       { concurrency: 4 }
     );
-    const retriedIds = new Set(retryable.map((outcome) => outcome.connectionId));
+    const retriedIds = new Set(
+      retryable.map((outcome) => outcome.connectionId)
+    );
     const retained: ConnectionSyncOutcome[] = [];
     for (const outcome of first) {
       if (!retriedIds.has(outcome.connectionId)) {

@@ -5,10 +5,7 @@ import { describe, expect, it } from "vitest";
 import { BankStore } from "@/bank-store";
 import type { BankStoreService } from "@/bank-store";
 import type { BankConnection } from "@/domain/connection";
-import {
-  ConnectionIdSchema,
-  ProviderIdSchema,
-} from "@/domain/identifiers";
+import { ConnectionIdSchema, ProviderIdSchema } from "@/domain/identifiers";
 import { SyncInProgressError } from "@/errors";
 import type { BankProviderAdapter } from "@/provider-registry";
 import { providerRegistryLayer } from "@/provider-registry";
@@ -84,7 +81,8 @@ describe("connection synchronization policy", () => {
       displayName: "Akahu test",
       id: akahuProviderId,
       pendingTransactions: { _tag: "Available" },
-      readSnapshot: () => Effect.succeed({ accounts: [], pending: [], posted: [] }),
+      readSnapshot: () =>
+        Effect.succeed({ accounts: [], pending: [], posted: [] }),
       refresh: {
         _tag: "Explicit",
         minimumInterval: Duration.hours(1),
@@ -141,7 +139,8 @@ describe("connection synchronization policy", () => {
       displayName: "Managed provider",
       id: managedProviderId,
       pendingTransactions: { _tag: "Available" },
-      readSnapshot: () => Effect.succeed({ accounts: [], pending: [], posted: [] }),
+      readSnapshot: () =>
+        Effect.succeed({ accounts: [], pending: [], posted: [] }),
       refresh: { _tag: "ProviderManaged" },
     };
     const managedConnection = connection(
@@ -181,7 +180,8 @@ describe("connection synchronization policy", () => {
       displayName: "Managed provider",
       id: managedProviderId,
       pendingTransactions: { _tag: "Unavailable" },
-      readSnapshot: () => Effect.succeed({ accounts: [], pending: [], posted: [] }),
+      readSnapshot: () =>
+        Effect.succeed({ accounts: [], pending: [], posted: [] }),
       refresh: { _tag: "ProviderManaged" },
     };
     const managedConnection = connection(

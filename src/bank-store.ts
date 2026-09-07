@@ -1,7 +1,11 @@
 import { Context } from "effect";
 import type { Effect } from "effect";
 
-import type { AccountQuery, BankAccount, ProviderAccount } from "@/domain/account";
+import type {
+  AccountQuery,
+  BankAccount,
+  ProviderAccount,
+} from "@/domain/account";
 import type { BankConnection } from "@/domain/connection";
 import type { ConnectionId, ProviderId } from "@/domain/identifiers";
 import type { SyncStatus } from "@/domain/sync";
@@ -41,7 +45,10 @@ export interface ProviderSnapshot {
 /** Persistence operations for normalized banking data and connection-scoped synchronization state. */
 export interface BankStoreService {
   /** List persisted, non-secret provider connections. */
-  readonly listConnections: Effect.Effect<readonly BankConnection[], DatabaseError>;
+  readonly listConnections: Effect.Effect<
+    readonly BankConnection[],
+    DatabaseError
+  >;
   /** Retrieve one persisted connection. */
   readonly getConnection: (
     connectionId: ConnectionId
@@ -75,7 +82,10 @@ export interface BankStoreService {
     connectionId: ConnectionId
   ) => Effect.Effect<SyncStatus, DatabaseError | NotFoundError>;
   /** List synchronization state for all configured connections. */
-  readonly listSyncStatuses: Effect.Effect<readonly SyncStatus[], DatabaseError>;
+  readonly listSyncStatuses: Effect.Effect<
+    readonly SyncStatus[],
+    DatabaseError
+  >;
   /** Attempt to acquire the synchronization lease for one connection. */
   readonly acquireSync: (
     connectionId: ConnectionId,

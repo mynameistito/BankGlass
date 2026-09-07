@@ -2,10 +2,7 @@ import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import type { BankConnection } from "@/domain/connection";
-import {
-  ConnectionIdSchema,
-  ProviderIdSchema,
-} from "@/domain/identifiers";
+import { ConnectionIdSchema, ProviderIdSchema } from "@/domain/identifiers";
 import type { BankProviderAdapter } from "@/provider-registry";
 import { ProviderRegistry, providerRegistryLayer } from "@/provider-registry";
 
