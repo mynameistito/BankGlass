@@ -17,8 +17,7 @@ const Meta = Schema.optional(
   })
 );
 
-/** Raw Akahu account payload accepted at the adapter boundary. */
-export const AkahuAccount = Schema.Struct({
+const AkahuAccount = Schema.Struct({
   _id: Schema.String,
   balance: Schema.optional(
     Schema.Struct({
@@ -41,8 +40,7 @@ export const AkahuAccount = Schema.Struct({
   type: Schema.String,
 });
 
-/** Raw Akahu posted transaction payload accepted at the adapter boundary. */
-export const AkahuTransaction = Schema.Struct({
+const AkahuTransaction = Schema.Struct({
   _account: Schema.String,
   _id: Schema.String,
   amount: Schema.Number,
@@ -57,8 +55,7 @@ export const AkahuTransaction = Schema.Struct({
   updated_at: DateTime,
 });
 
-/** Raw Akahu pending transaction payload accepted at the adapter boundary. */
-export const AkahuPendingTransaction = Schema.Struct({
+const AkahuPendingTransaction = Schema.Struct({
   _account: Schema.String,
   amount: Schema.Number,
   date: DateTime,
