@@ -102,7 +102,8 @@ describe("connection synchronization policy", () => {
         Effect.sync(() => {
           failCalls += 1;
         }),
-      getConnection: () => Effect.succeed(connection(akahuConnectionId, akahuProviderId)),
+      getConnection: () =>
+        Effect.succeed(connection(akahuConnectionId, akahuProviderId)),
       getSyncStatus: () =>
         Effect.succeed({
           connectionId: akahuConnectionId,
@@ -211,7 +212,7 @@ describe("connection synchronization policy", () => {
       service.synchronizeEnabled({ refresh: "ReadAvailable" })
     );
 
-    expect(outcomes).toEqual(
+    expect(outcomes).toStrictEqual(
       expect.arrayContaining([
         expect.objectContaining({
           _tag: "Success",
