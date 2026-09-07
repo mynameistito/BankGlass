@@ -266,9 +266,13 @@ const createServer = (store: BankStoreService) => {
       runTool(
         store.listSyncStatuses.pipe(
           Effect.flatMap((statuses) => {
-            const status = statuses[0];
+            const [status] = statuses;
             return status === undefined
-              ? Effect.fail(new InvalidRequestError({ message: "No connection is configured" }))
+              ? Effect.fail(
+                  new InvalidRequestError({
+                    message: "No connection is configured",
+                  })
+                )
               : Effect.succeed(status);
           })
         )
