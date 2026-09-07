@@ -5,8 +5,8 @@ import type { BankConnection } from "@/domain/connection";
 import { ConnectionIdSchema } from "@/domain/identifiers";
 import {
   AkahuProviderId,
-  decodeAkahuAccounts,
   makeAkahuProvider,
+  parseAkahuAccounts,
 } from "@/providers/akahu/provider";
 
 const now = "2026-08-26T00:00:00.000Z";
@@ -49,7 +49,7 @@ const explicitRefresh = (provider: ReturnType<typeof makeAkahuProvider>) => {
 describe("Akahu provider boundary", () => {
   it("decodes a valid account without assigning a BankGlass-local ID", async () => {
     const result = await Effect.runPromise(
-      decodeAkahuAccounts(
+      parseAkahuAccounts(
         {
           items: [
             {
@@ -81,7 +81,7 @@ describe("Akahu provider boundary", () => {
   it("rejects malformed provider data as a typed error", async () => {
     const error = await Effect.runPromise(
       Effect.flip(
-        decodeAkahuAccounts({ items: [{ _id: 1 }], success: true }, now)
+        parseAkahuAccounts({ items: [{ _id: 1 }], success: true }, now)
       )
     );
     expect(error._tag).toBe("InvalidProviderResponseError");
