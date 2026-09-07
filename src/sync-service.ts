@@ -67,7 +67,10 @@ export const makeSyncService = (
         readonly requestProviderRefresh: boolean;
       }) {
         const startedAt = new Date().toISOString();
-        const providerRefreshAllowedBefore = options.requestProviderRefresh
+        const shouldRequestProviderRefresh =
+          options.requestProviderRefresh &&
+          (provider.metadata?.supportsRefresh ?? true);
+        const providerRefreshAllowedBefore = shouldRequestProviderRefresh
           ? new Date(Date.now() - cooldownSeconds * 1000).toISOString()
           : null;
         const leaseId = crypto.randomUUID();
@@ -75,7 +78,7 @@ export const makeSyncService = (
           store.acquireSync(startedAt, leaseId, providerRefreshAllowedBefore)
         );
         if (Result.isFailure(acquisition)) {
-          if (options.requestProviderRefresh) {
+          if (shouldRequestProviderRefresh) {
             const status = yield* store.getSyncStatus;
             if (status.lastProviderRefreshRequestedAt !== null) {
               const retryAtMs =
@@ -93,7 +96,7 @@ export const makeSyncService = (
           return yield* Effect.fail(acquisition.failure);
         }
         const run = Effect.gen(function* run() {
-          if (options.requestProviderRefresh) {
+          if (shouldRequestProviderRefresh) {
             yield* provider.requestRefresh;
             yield* store.markRefreshRequested(startedAt, leaseId);
             yield* Effect.sleep("5 seconds");
