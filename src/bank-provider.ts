@@ -19,8 +19,21 @@ export type BankProviderError =
   | ProviderRateLimitError
   | ProviderUnavailableError
   | InvalidProviderResponseError;
+
+/** Static information describing how an upstream provider behaves. */
+interface BankProviderMetadata {
+  /** Stable provider identifier used for diagnostics and future source routing. */
+  readonly id: string;
+  /** Human-readable provider name. */
+  readonly displayName: string;
+  /** Whether the upstream exposes a safe, explicit refresh operation. */
+  readonly supportsRefresh: boolean;
+}
+
 /** Provider operations required by the synchronization service. */
 export interface BankProviderService {
+  /** Provider capabilities. Omitted providers retain the legacy refresh behaviour. */
+  readonly metadata?: BankProviderMetadata;
   /** Read all accounts connected to the configured provider application. */
   readonly getAccounts: Effect.Effect<
     readonly BankAccount[],
@@ -39,6 +52,7 @@ export interface BankProviderService {
   /** Ask the provider to refresh its source data. */
   readonly requestRefresh: Effect.Effect<void, BankProviderError>;
 }
+
 /** Effect service tag for bank-provider operations. */
 export class BankProvider extends Context.Service<
   BankProvider,
