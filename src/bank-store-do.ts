@@ -3,27 +3,23 @@ import { Effect, Layer, Schema } from "effect";
 
 import { BankStore } from "@/bank-store";
 import type { ProviderSnapshot } from "@/bank-store";
-import {
-  BankAccountSchema,
-  ProviderAccountSchema,
-  type BankAccount,
-} from "@/domain/account";
-import {
-  BankConnectionSchema,
-  type BankConnection,
-} from "@/domain/connection";
+import { BankAccountSchema, ProviderAccountSchema } from "@/domain/account";
+import type { BankAccount } from "@/domain/account";
+import { BankConnectionSchema } from "@/domain/connection";
+import type { BankConnection } from "@/domain/connection";
 import {
   AccountIdSchema,
   ConnectionIdSchema,
   ProviderIdSchema,
 } from "@/domain/identifiers";
-import { SyncStatusSchema, type SyncStatus } from "@/domain/sync";
+import { SyncStatusSchema } from "@/domain/sync";
+import type { SyncStatus } from "@/domain/sync";
 import {
   ProviderPendingTransactionSchema,
   ProviderPostedTransactionSchema,
   TransactionRecordSchema,
-  type TransactionPage,
 } from "@/domain/transaction";
+import type { TransactionPage } from "@/domain/transaction";
 import {
   ApiRateLimitError,
   DatabaseError,
@@ -384,40 +380,45 @@ const localAccountId = (
   sql: SqlStorage,
   connectionId: string,
   providerAccountId: string
-) =>
-  sql
+) => {
+  const [row] = sql
     .exec<{ id: string }>(
       "SELECT id FROM accounts WHERE connection_id=? AND provider_account_id=?",
       connectionId,
       providerAccountId
     )
-    .toArray()[0]?.id ?? `account_${crypto.randomUUID()}`;
+    .toArray();
+  return row?.id ?? `account_${crypto.randomUUID()}`;
+};
 
 const localTransactionId = (
   sql: SqlStorage,
   connectionId: string,
   providerTransactionId: string
-) =>
-  sql
+) => {
+  const [row] = sql
     .exec<{ id: string }>(
       "SELECT id FROM transactions WHERE connection_id=? AND provider_transaction_id=?",
       connectionId,
       providerTransactionId
     )
-    .toArray()[0]?.id ?? `transaction_${crypto.randomUUID()}`;
+    .toArray();
+  return row?.id ?? `transaction_${crypto.randomUUID()}`;
+};
 
 const accountIdForProviderAccount = (
   sql: SqlStorage,
   connectionId: string,
   providerAccountId: string
 ) => {
-  const id = sql
+  const [row] = sql
     .exec<{ id: string }>(
       "SELECT id FROM accounts WHERE connection_id=? AND provider_account_id=?",
       connectionId,
       providerAccountId
     )
-    .toArray()[0]?.id;
+    .toArray();
+  const id = row?.id;
   if (id === undefined) {
     throw new Error("Provider transaction references an unknown account");
   }
@@ -425,12 +426,12 @@ const accountIdForProviderAccount = (
 };
 
 const saveSnapshotRows = (sql: SqlStorage, snapshot: ProviderSnapshot) => {
-  const connection = sql
+  const [connection] = sql
     .exec<{ providerId: string }>(
       "SELECT provider_id AS providerId FROM connections WHERE id=?",
       snapshot.connectionId
     )
-    .toArray()[0];
+    .toArray();
   if (connection?.providerId !== snapshot.providerId) {
     throw new Error("Snapshot provider does not match the configured connection");
   }
@@ -591,9 +592,9 @@ const getConnection: CommandHandler = (sql, args) => {
   const [connectionId] = Schema.decodeUnknownSync(
     Schema.Tuple([ConnectionIdSchema])
   )(args);
-  const row = sql
+  const [row] = sql
     .exec<SqlRow>(`${connectionSelect} WHERE id=?`, connectionId)
-    .toArray()[0];
+    .toArray();
   return row === undefined
     ? { error: "not-found", ok: false }
     : { ok: true, value: rowConnection(row) };
@@ -650,7 +651,9 @@ const listAccounts: CommandHandler = (sql, args) => {
 
 const getAccount: CommandHandler = (sql, args) => {
   const [id] = Schema.decodeUnknownSync(Schema.Tuple([AccountIdSchema]))(args);
-  const row = sql.exec<SqlRow>(`${accountSelect} WHERE id=?`, id).toArray()[0];
+  const [row] = sql
+    .exec<SqlRow>(`${accountSelect} WHERE id=?`, id)
+    .toArray();
   return row === undefined
     ? { error: "not-found", ok: false }
     : { ok: true, value: rowAccount(row) };
@@ -709,9 +712,9 @@ const getSyncStatus: CommandHandler = (sql, args) => {
   const [connectionId] = Schema.decodeUnknownSync(
     Schema.Tuple([ConnectionIdSchema])
   )(args);
-  const row = sql
+  const [row] = sql
     .exec<SqlRow>(`${syncSelect} WHERE connection_id=?`, connectionId)
-    .toArray()[0];
+    .toArray();
   return row === undefined
     ? { error: "not-found", ok: false }
     : { ok: true, value: rowSync(row) };
@@ -862,7 +865,7 @@ const saveSnapshot: CommandHandler = (sql, args) => {
   return saveSnapshotRows(sql, snapshot);
 };
 
-const commandHandlers = {
+const commandHandlers: Record<string, CommandHandler> = {
   acquireSync,
   completeSync,
   consumeRateLimit,
@@ -879,7 +882,7 @@ const commandHandlers = {
   reset,
   saveConnection,
   saveSnapshot,
-} satisfies Record<string, CommandHandler>;
+};
 
 /** Durable Object implementation of the SQLite-backed BankGlass store. */
 export class BankStoreDO extends DurableObject {
@@ -906,9 +909,12 @@ export class BankStoreDO extends DurableObject {
       )
         ? this.ctx.storage.transactionSync(execute)
         : execute();
-    } catch (cause) {
-      const error = new DatabaseError({ cause, operation: "command" });
-      return { error: error._tag, ok: false };
+    } catch (error) {
+      const databaseError = new DatabaseError({
+        cause: error,
+        operation: "command",
+      });
+      return { error: databaseError._tag, ok: false };
     }
   }
 }
