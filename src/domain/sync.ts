@@ -39,8 +39,7 @@ export interface ConnectionSyncSuccess {
   readonly syncedAt: string;
 }
 
-/** Failed synchronization result retained when synchronizing several connections. */
-export interface ConnectionSyncFailure {
+interface ConnectionSyncFailure {
   readonly _tag: "Failure";
   readonly connectionId: typeof ConnectionIdSchema.Type;
   readonly errorTag: string;
