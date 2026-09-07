@@ -133,23 +133,22 @@ const parseResponseJson = <A>(
       })
     );
   }
-  return Effect.tryPromise({
-    catch: (error) =>
-      new InvalidProviderResponseError({ details: String(error), operation }),
-    try: async () => await response.json(),
-  }).pipe(
-    Effect.flatMap((json) =>
-      Schema.decodeUnknownEffect(schema)(json).pipe(
-        Effect.mapError(
-          (error) =>
-            new InvalidProviderResponseError({
-              details: String(error),
-              operation,
-            })
-        )
+  return Effect.gen(function* parseJsonResponse() {
+    const json = yield* Effect.tryPromise({
+      catch: (error) =>
+        new InvalidProviderResponseError({ details: String(error), operation }),
+      try: async () => await response.json(),
+    });
+    return yield* Schema.decodeUnknownEffect(schema)(json).pipe(
+      Effect.mapError(
+        (error) =>
+          new InvalidProviderResponseError({
+            details: String(error),
+            operation,
+          })
       )
-    )
-  );
+    );
+  });
 };
 
 const normalizePendingTransaction = (
