@@ -1,4 +1,5 @@
-import { Context, Duration, Effect, Layer } from "effect";
+import { Context, Effect, Layer } from "effect";
+import type * as Duration from "effect/Duration";
 
 import type { ProviderAccount } from "@/domain/account";
 import type { BankConnection } from "@/domain/connection";
@@ -7,16 +8,14 @@ import type {
   ProviderPendingTransaction,
   ProviderPostedTransaction,
 } from "@/domain/transaction";
+import { DuplicateProviderRegistrationError } from "@/errors/duplicate-provider-registration";
 import type {
   AuthenticationError,
   InvalidProviderResponseError,
   ProviderRateLimitError,
   ProviderUnavailableError,
 } from "@/errors";
-import {
-  DuplicateProviderRegistrationError,
-  ProviderNotRegisteredError,
-} from "@/errors/provider-registry";
+import { ProviderNotRegisteredError } from "@/errors/provider-not-registered";
 
 /** Failures that may cross a banking-provider adapter boundary. */
 export type BankProviderError =
@@ -26,14 +25,14 @@ export type BankProviderError =
   | InvalidProviderResponseError;
 
 /** Domain-shaped data returned by one provider read operation. */
-export interface ProviderReadSnapshot {
+interface ProviderReadSnapshot {
   readonly accounts: readonly ProviderAccount[];
   readonly pending: readonly ProviderPendingTransaction[];
   readonly posted: readonly ProviderPostedTransaction[];
 }
 
 /** Provider-owned explicit refresh operation and its required timing policy. */
-export interface ExplicitRefreshStrategy {
+interface ExplicitRefreshStrategy {
   readonly _tag: "Explicit";
   /** Minimum time between explicit upstream refresh requests. */
   readonly minimumInterval: Duration.Duration;
@@ -46,13 +45,13 @@ export interface ExplicitRefreshStrategy {
 }
 
 /** Material upstream freshness strategies understood by synchronization policy. */
-export type RefreshStrategy =
+type RefreshStrategy =
   | ExplicitRefreshStrategy
   | { readonly _tag: "ProviderManaged" }
   | { readonly _tag: "Unavailable" };
 
 /** Whether the provider can expose pending transactions in its normalized snapshot. */
-export type PendingTransactionsStrategy =
+type PendingTransactionsStrategy =
   | { readonly _tag: "Available" }
   | { readonly _tag: "Unavailable" };
 
@@ -89,13 +88,7 @@ export class ProviderRegistry extends Context.Service<
   ProviderRegistryService
 >()("@bankglass/ProviderRegistry") {}
 
-/**
- * Construct a provider registry while rejecting duplicate stable provider IDs.
- *
- * @param providers - Provider adapters bundled into the current deployment.
- * @returns A provider registry service or a duplicate-registration error.
- */
-export const makeProviderRegistry = (providers: readonly BankProviderAdapter[]) =>
+const makeProviderRegistry = (providers: readonly BankProviderAdapter[]) =>
   Effect.gen(function* buildProviderRegistry() {
     const byId = new Map<ProviderId, BankProviderAdapter>();
     for (const provider of providers) {
