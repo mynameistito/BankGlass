@@ -1,5 +1,5 @@
 import { env, exports } from "cloudflare:workers";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -9,6 +9,11 @@ import {
 import { BankStore } from "@/bank-store";
 import { doBankStoreLive, isStoreStub } from "@/bank-store-do";
 import type { RuntimeConfig } from "@/config";
+import {
+  ConnectionIdSchema,
+  ProviderAccountIdSchema,
+  ProviderIdSchema,
+} from "@/domain/identifiers";
 import { routeRequest } from "@/http-api";
 import { routeMcpRequest } from "@/mcp-api";
 import { SyncService } from "@/sync-service";
@@ -26,6 +31,13 @@ const config = {
   refreshCooldownSeconds: "3600",
   syncLookbackDays: "14",
 } satisfies RuntimeConfig;
+const connectionId = Schema.decodeUnknownSync(ConnectionIdSchema)(
+  "connection_akahu_default"
+);
+const providerId = Schema.decodeUnknownSync(ProviderIdSchema)("akahu");
+const providerAccountId = Schema.decodeUnknownSync(ProviderAccountIdSchema)(
+  "test"
+);
 const resetStore = async () => {
   const stub = env.BANK_STORE.getByName("bankglass");
   if (!isStoreStub(stub)) {
@@ -39,7 +51,10 @@ const requestApi = (request: Request) =>
     routeRequest(request, config).pipe(
       Effect.provideService(
         SyncService,
-        SyncService.of({ synchronize: () => Effect.die("unused") })
+        SyncService.of({
+          synchronizeConnection: () => Effect.die("unused"),
+          synchronizeEnabled: () => Effect.die("unused"),
+        })
       ),
       Effect.provide(doBankStoreLive(env.BANK_STORE))
     )
@@ -105,8 +120,9 @@ describe("Cloudflare HTTP boundary", () => {
     const store = await Effect.runPromise(
       BankStore.pipe(Effect.provide(doBankStoreLive(env.BANK_STORE)))
     );
+    const time = "2026-08-26T00:00:00.000Z";
     await Effect.runPromise(
-      store.acquireSync("2026-08-26T00:00:00.000Z", "api-test", null)
+      store.acquireSync(connectionId, time, "api-test", null)
     );
     await Effect.runPromise(
       store.saveSnapshot({
@@ -115,36 +131,43 @@ describe("Cloudflare HTTP boundary", () => {
             availableBalance: 18,
             currency: "NZD",
             currentBalance: 20,
-            dataUpdatedAt: "2026-08-26T00:00:00.000Z",
+            dataUpdatedAt: time,
             formattedAccount: null,
             holderName: null,
-            id: "account_test",
             institution: "BNZ",
             name: "Everyday",
+            providerAccountId,
             providerBalanceRefreshedAt: null,
-            providerId: "provider_test",
             providerTransactionsRefreshedAt: null,
             status: "active",
-            syncedAt: "2026-08-26T00:00:00.000Z",
             type: "checking",
           },
         ],
+        connectionId,
         leaseId: "api-test",
         pending: [],
         posted: [],
-        reconcilePostedFrom: "2026-08-26T00:00:00.000Z",
-        syncedAt: "2026-08-26T00:00:00.000Z",
+        providerId,
+        reconcilePostedFrom: time,
+        syncedAt: time,
       })
     );
+    const [storedAccount] = await Effect.runPromise(
+      store.listAccounts({ connectionId, providerId: null })
+    );
+    if (storedAccount === undefined) {
+      throw new TypeError("Expected seeded account");
+    }
     const response = await requestApi(
-      new Request("https://example.test/v1/accounts/account_test/balance", {
-        headers,
-      })
+      new Request(
+        `https://example.test/v1/accounts/${encodeURIComponent(storedAccount.id)}/balance`,
+        { headers }
+      )
     );
     const responseBody = await response.text();
     expect(response.status).toBe(200);
     expect(JSON.parse(responseBody)).toMatchObject({
-      data: { accountId: "account_test", available: 18, current: 20 },
+      data: { accountId: storedAccount.id, available: 18, current: 20 },
     });
   });
 
