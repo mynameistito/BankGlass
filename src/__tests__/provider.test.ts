@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { BankConnection } from "@/domain/connection";
 import { ConnectionIdSchema } from "@/domain/identifiers";
 import {
+  AkahuProviderId,
   decodeAkahuAccounts,
   makeAkahuProvider,
 } from "@/providers/akahu/provider";
@@ -17,27 +18,26 @@ const connection: BankConnection = {
   label: "Akahu test",
   lastSyncAt: null,
   metadata: {},
-  providerId: makeAkahuProvider({
-    appToken: Redacted.make("app"),
-    baseUrl: "https://api.example.test",
-    userToken: Redacted.make("user"),
-  }).id,
+  providerId: AkahuProviderId,
   updatedAt: now,
 };
 
 const makeProvider = (
   fetchImplementation: typeof fetch,
   requestTimeoutMs?: number
-) =>
-  makeAkahuProvider(
-    {
-      appToken: Redacted.make("app"),
-      baseUrl: "https://api.example.test",
-      ...(requestTimeoutMs === undefined ? {} : { requestTimeoutMs }),
-      userToken: Redacted.make("user"),
-    },
-    fetchImplementation
-  );
+) => {
+  const baseConfig = {
+    appToken: Redacted.make("app"),
+    baseUrl: "https://api.example.test",
+    userToken: Redacted.make("user"),
+  };
+  return requestTimeoutMs === undefined
+    ? makeAkahuProvider(baseConfig, fetchImplementation)
+    : makeAkahuProvider(
+        { ...baseConfig, requestTimeoutMs },
+        fetchImplementation
+      );
+};
 
 const explicitRefresh = (provider: ReturnType<typeof makeAkahuProvider>) => {
   if (provider.refresh._tag !== "Explicit") {
