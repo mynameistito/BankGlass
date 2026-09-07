@@ -72,7 +72,10 @@ const failWithCooldownWhenApplicable = (
   refresh: ExplicitRefresh | null,
   startedMillis: number,
   acquisitionError: DatabaseError | SyncInProgressError
-): Effect.Effect<never, DatabaseError | RefreshCooldownError | SyncInProgressError> =>
+): Effect.Effect<
+  never,
+  DatabaseError | NotFoundError | RefreshCooldownError | SyncInProgressError
+> =>
   Effect.gen(function* checkRefreshCooldown() {
     if (refresh === null) {
       return yield* Effect.fail(acquisitionError);
@@ -214,6 +217,28 @@ const synchronizeOneEnabled = (
     })
   );
 
+const makeSynchronizeEnabled = (
+  store: BankStoreService,
+  synchronizeConnection: SynchronizeConnection
+): SyncServiceService["synchronizeEnabled"] =>
+  (input) =>
+    Effect.gen(function* synchronizeAllEnabled() {
+      const connections = yield* store.listConnections;
+      const effects: Effect.Effect<ConnectionSyncOutcome>[] = [];
+      for (const connection of connections) {
+        if (connection.enabled) {
+          effects.push(
+            synchronizeOneEnabled(
+              synchronizeConnection,
+              connection,
+              input.refresh
+            )
+          );
+        }
+      }
+      return yield* Effect.all(effects, { concurrency: 4 });
+    });
+
 /** Application operations that coordinate provider reads and connection-scoped persistence. */
 export interface SyncServiceService {
   /** Synchronize one configured provider connection. */
@@ -247,22 +272,10 @@ export const makeSyncService = (lookbackDays: number) =>
       registry,
       lookbackDays
     );
-    const synchronizeEnabled: SyncServiceService["synchronizeEnabled"] = (
-      input
-    ) =>
-      Effect.gen(function* synchronizeAllEnabled() {
-        const connections = yield* store.listConnections;
-        const effects = connections
-          .filter((connection) => connection.enabled)
-          .map((connection) =>
-            synchronizeOneEnabled(
-              synchronizeConnection,
-              connection,
-              input.refresh
-            )
-          );
-        return yield* Effect.all(effects, { concurrency: 4 });
-      });
+    const synchronizeEnabled = makeSynchronizeEnabled(
+      store,
+      synchronizeConnection
+    );
     return SyncService.of({ synchronizeConnection, synchronizeEnabled });
   });
 
