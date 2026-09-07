@@ -3,7 +3,6 @@ import {
   Duration,
   Effect,
   Redacted,
-  Result,
   Schedule,
   Schema,
 } from "effect";
@@ -59,54 +58,27 @@ const nowIso = Clock.currentTimeMillis.pipe(
   Effect.map((millis) => new Date(millis).toISOString())
 );
 
-const parseWithSchema = <A>(
-  schema: Schema.Codec<A, unknown, never, never>,
-  operation: string,
-  input: unknown
-): Effect.Effect<A, InvalidProviderResponseError> =>
-  Effect.gen(function* parseProviderPayload() {
-    const result = yield* Effect.result(Schema.decodeUnknownEffect(schema)(input));
-    if (Result.isFailure(result)) {
-      return yield* Effect.fail(
-        new InvalidProviderResponseError({
-          details: String(result.failure),
-          operation,
-        })
-      );
-    }
-    return result.success;
-  });
-
-/**
- * Parse and normalize an Akahu account response.
- *
- * @param input - Untrusted payload returned by Akahu.
- * @param now - ISO timestamp assigned to normalized records.
- * @returns Normalized accounts or a typed provider response error.
- */
-export const parseAkahuAccounts = (input: unknown, now: string) =>
-  parseWithSchema(AccountsResponse, "getAccounts", input).pipe(
-    Effect.map((response) =>
-      response.items.map((item): ProviderAccount => ({
-        availableBalance: item.balance?.available ?? null,
-        currency: item.balance?.currency ?? null,
-        currentBalance: item.balance?.current ?? null,
-        dataUpdatedAt: now,
-        formattedAccount: item.formatted_account ?? null,
-        holderName: item.meta?.holder ?? null,
-        institution: item.connection.name,
-        name: item.name,
-        providerAccountId: Schema.decodeUnknownSync(ProviderAccountIdSchema)(
-          item._id
-        ),
-        providerBalanceRefreshedAt: item.refreshed?.balance ?? null,
-        providerTransactionsRefreshedAt:
-          item.refreshed?.transactions ?? null,
-        status: item.status === "ACTIVE" ? "active" : "inactive",
-        type: item.type.toLowerCase(),
-      }))
-    )
-  );
+const normalizeAccounts = (
+  response: typeof AccountsResponse.Type,
+  now: string
+): readonly ProviderAccount[] =>
+  response.items.map((item): ProviderAccount => ({
+    availableBalance: item.balance?.available ?? null,
+    currency: item.balance?.currency ?? null,
+    currentBalance: item.balance?.current ?? null,
+    dataUpdatedAt: now,
+    formattedAccount: item.formatted_account ?? null,
+    holderName: item.meta?.holder ?? null,
+    institution: item.connection.name,
+    name: item.name,
+    providerAccountId: Schema.decodeUnknownSync(ProviderAccountIdSchema)(
+      item._id
+    ),
+    providerBalanceRefreshedAt: item.refreshed?.balance ?? null,
+    providerTransactionsRefreshedAt: item.refreshed?.transactions ?? null,
+    status: item.status === "ACTIVE" ? "active" : "inactive",
+    type: item.type.toLowerCase(),
+  }));
 
 const pendingId = (item: typeof PendingResponse.Type["items"][number]) =>
   Effect.promise(() =>
@@ -165,7 +137,19 @@ const parseResponseJson = <A>(
     catch: (error) =>
       new InvalidProviderResponseError({ details: String(error), operation }),
     try: () => response.json(),
-  }).pipe(Effect.flatMap((input) => parseWithSchema(schema, operation, input)));
+  }).pipe(
+    Effect.flatMap((json) =>
+      Schema.decodeUnknownEffect(schema)(json).pipe(
+        Effect.mapError(
+          (error) =>
+            new InvalidProviderResponseError({
+              details: String(error),
+              operation,
+            })
+        )
+      )
+    )
+  );
 };
 
 const normalizePendingTransaction = (
@@ -218,7 +202,8 @@ export const makeAkahuProvider = (
       Effect.sync(() => new AbortController()),
       (controller) =>
         Effect.tryPromise({
-          catch: (error) => new ProviderUnavailableError({ cause: error, operation }),
+          catch: (error) =>
+            new ProviderUnavailableError({ cause: error, operation }),
           try: () =>
             fetchImplementation(`${config.baseUrl}${path}`, {
               ...init,
@@ -259,21 +244,7 @@ export const makeAkahuProvider = (
   const readAccounts = Effect.gen(function* readAccounts() {
     const now = yield* nowIso;
     const response = yield* request("getAccounts", "/accounts", AccountsResponse);
-    return response.items.map((item): ProviderAccount => ({
-      availableBalance: item.balance?.available ?? null,
-      currency: item.balance?.currency ?? null,
-      currentBalance: item.balance?.current ?? null,
-      dataUpdatedAt: now,
-      formattedAccount: item.formatted_account ?? null,
-      holderName: item.meta?.holder ?? null,
-      institution: item.connection.name,
-      name: item.name,
-      providerAccountId: Schema.decodeUnknownSync(ProviderAccountIdSchema)(item._id),
-      providerBalanceRefreshedAt: item.refreshed?.balance ?? null,
-      providerTransactionsRefreshedAt: item.refreshed?.transactions ?? null,
-      status: item.status === "ACTIVE" ? "active" : "inactive",
-      type: item.type.toLowerCase(),
-    }));
+    return normalizeAccounts(response, now);
   });
 
   const readPosted = (
