@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from "effect";
-import type * as Duration from "effect/Duration";
+import type { Duration } from "effect/Duration";
 
 import type { ProviderAccount } from "@/domain/account";
 import type { BankConnection } from "@/domain/connection";
@@ -8,13 +8,13 @@ import type {
   ProviderPendingTransaction,
   ProviderPostedTransaction,
 } from "@/domain/transaction";
-import { DuplicateProviderRegistrationError } from "@/errors/duplicate-provider-registration";
 import type {
   AuthenticationError,
   InvalidProviderResponseError,
   ProviderRateLimitError,
   ProviderUnavailableError,
 } from "@/errors";
+import { DuplicateProviderRegistrationError } from "@/errors/duplicate-provider-registration";
 import { ProviderNotRegisteredError } from "@/errors/provider-not-registered";
 
 /** Failures that may cross a banking-provider adapter boundary. */
@@ -35,9 +35,9 @@ interface ProviderReadSnapshot {
 interface ExplicitRefreshStrategy {
   readonly _tag: "Explicit";
   /** Minimum time between explicit upstream refresh requests. */
-  readonly minimumInterval: Duration.Duration;
+  readonly minimumInterval: Duration;
   /** Delay before reading provider cache after accepting a refresh request. */
-  readonly propagationDelay: Duration.Duration;
+  readonly propagationDelay: Duration;
   /** Request an upstream refresh for one connection. */
   readonly request: (
     connection: BankConnection
