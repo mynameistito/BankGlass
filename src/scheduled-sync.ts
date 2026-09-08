@@ -35,7 +35,7 @@ const retryConnection = (
     if (Result.isSuccess(refreshed)) {
       return refreshed.success;
     }
-    if (isDeferralTag(refreshed.failure._tag)) {
+    if (refreshed.failure._tag === "SyncInProgressError") {
       return failureOutcome(original, refreshed.failure._tag);
     }
 
