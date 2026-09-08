@@ -128,6 +128,14 @@ const transactionQuery = (status: "posted" | "pending" | null = null) => ({
   to: null,
 });
 
+const firstOrThrow = <T>(items: readonly T[], message: string): T => {
+  const [item] = items;
+  if (item === undefined) {
+    throw new TypeError(message);
+  }
+  return item;
+};
+
 describe("Durable Object banking persistence", () => {
   beforeEach(resetStore);
 
@@ -161,11 +169,32 @@ describe("Durable Object banking persistence", () => {
     const secondTransactions = await Effect.runPromise(
       store.listTransactions(transactionQuery("posted"))
     );
-
-    expect(secondAccounts[0]?.id).toBe(firstAccounts[0]?.id);
-    expect(secondTransactions.items[0]?.id).toBe(
-      firstTransactions.items[0]?.id
+    const firstAccount = firstOrThrow(firstAccounts, "Expected first account");
+    const secondAccount = firstOrThrow(secondAccounts, "Expected second account");
+    const firstTransaction = firstOrThrow(
+      firstTransactions.items,
+      "Expected first transaction"
     );
+    const secondTransaction = firstOrThrow(
+      secondTransactions.items,
+      "Expected second transaction"
+    );
+
+    expect({
+      accountCount: secondAccounts.length,
+      accountId: secondAccount.id,
+      originalAccountId: firstAccount.id,
+      originalTransactionId: firstTransaction.id,
+      transactionCount: secondTransactions.items.length,
+      transactionId: secondTransaction.id,
+    }).toStrictEqual({
+      accountCount: 1,
+      accountId: firstAccount.id,
+      originalAccountId: firstAccount.id,
+      originalTransactionId: firstTransaction.id,
+      transactionCount: 1,
+      transactionId: firstTransaction.id,
+    });
   });
 
   it("allows identical upstream IDs in different provider connections", async () => {
@@ -295,6 +324,125 @@ describe("Durable Object banking persistence", () => {
       )
     );
     expect(error._tag).toBe("SyncInProgressError");
+  });
+
+  it("rejects snapshots that do not hold the connection lease", async () => {
+    const store = await getStore();
+    await Effect.runPromise(store.saveConnection(simplefinConnection));
+    await Effect.runPromise(
+      Effect.all([
+        store.acquireSync(akahuConnectionId, time, "akahu-lease", null),
+        store.acquireSync(simplefinConnectionId, time, "simplefin-lease", null),
+      ])
+    );
+
+    const error = await Effect.runPromise(
+      Effect.flip(
+        store.saveSnapshot({
+          accounts: [account()],
+          connectionId: simplefinConnectionId,
+          leaseId: "akahu-lease",
+          pending: [],
+          posted: [posted()],
+          providerId: simplefinProviderId,
+          reconcilePostedFrom: time,
+          syncedAt: time,
+        })
+      )
+    );
+    const accounts = await Effect.runPromise(
+      store.listAccounts({
+        connectionId: simplefinConnectionId,
+        providerId: null,
+      })
+    );
+
+    expect({ accounts, errorTag: error._tag }).toStrictEqual({
+      accounts: [],
+      errorTag: "SyncInProgressError",
+    });
+  });
+
+  it("rejects snapshots whose provider does not match the connection", async () => {
+    const store = await getStore();
+    await Effect.runPromise(
+      store.acquireSync(akahuConnectionId, time, "akahu-lease", null)
+    );
+
+    const error = await Effect.runPromise(
+      Effect.flip(
+        store.saveSnapshot({
+          accounts: [account()],
+          connectionId: akahuConnectionId,
+          leaseId: "akahu-lease",
+          pending: [],
+          posted: [posted()],
+          providerId: simplefinProviderId,
+          reconcilePostedFrom: time,
+          syncedAt: time,
+        })
+      )
+    );
+    const accounts = await Effect.runPromise(
+      store.listAccounts({ connectionId: akahuConnectionId, providerId: null })
+    );
+
+    expect({ accounts, errorTag: error._tag }).toStrictEqual({
+      accounts: [],
+      errorTag: "DatabaseError",
+    });
+  });
+
+  it("does not allow a connection ID to change provider", async () => {
+    const store = await getStore();
+    await Effect.runPromise(store.saveConnection(simplefinConnection));
+    const error = await Effect.runPromise(
+      Effect.flip(
+        store.saveConnection({
+          ...simplefinConnection,
+          providerId: akahuProviderId,
+          updatedAt: later,
+        })
+      )
+    );
+    const persisted = await Effect.runPromise(
+      store.getConnection(simplefinConnectionId)
+    );
+
+    expect({ errorTag: error._tag, providerId: persisted.providerId }).toStrictEqual(
+      {
+        errorTag: "DatabaseError",
+        providerId: simplefinProviderId,
+      }
+    );
+  });
+
+  it("persists provider transactions without a currency", async () => {
+    const store = await getStore();
+    await Effect.runPromise(
+      store.acquireSync(akahuConnectionId, time, "lease", null)
+    );
+    await Effect.runPromise(
+      store.saveSnapshot({
+        accounts: [account()],
+        connectionId: akahuConnectionId,
+        leaseId: "lease",
+        pending: [],
+        posted: [{ ...posted(), currency: null }],
+        providerId: akahuProviderId,
+        reconcilePostedFrom: time,
+        syncedAt: time,
+      })
+    );
+    const transactions = await Effect.runPromise(
+      store.listTransactions(transactionQuery("posted"))
+    );
+    const transaction = firstOrThrow(
+      transactions.items,
+      "Expected transaction without currency"
+    );
+
+    expect(transaction.currency).toBeNull();
   });
 
   it("records one connection failure without corrupting another sync state", async () => {
