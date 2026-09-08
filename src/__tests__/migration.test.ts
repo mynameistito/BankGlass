@@ -105,20 +105,40 @@ describe("bank store schema migration", () => {
         .one();
       const migratedAccount = sql
         .exec<{
+          availableBalance: number | null;
           connectionId: string;
+          currentBalance: number | null;
+          dataUpdatedAt: string;
           id: string;
+          institution: string;
+          name: string;
           providerAccountId: string;
+          providerBalanceRefreshedAt: string | null;
+          providerTransactionsRefreshedAt: string | null;
+          syncedAt: string;
         }>(
-          "SELECT id,connection_id AS connectionId,provider_account_id AS providerAccountId FROM accounts"
+          `SELECT id,connection_id AS connectionId,provider_account_id AS providerAccountId,
+            institution,name,current_balance AS currentBalance,available_balance AS availableBalance,
+            provider_balance_refreshed_at AS providerBalanceRefreshedAt,
+            provider_transactions_refreshed_at AS providerTransactionsRefreshedAt,
+            data_updated_at AS dataUpdatedAt,synced_at AS syncedAt FROM accounts`
         )
         .one();
       const migratedTransaction = sql
         .exec<{
+          amount: number;
           connectionId: string;
+          dataUpdatedAt: string;
+          description: string;
           id: string;
           providerTransactionId: string;
+          providerUpdatedAt: string;
+          syncedAt: string;
+          transactionAt: string;
         }>(
-          "SELECT id,connection_id AS connectionId,provider_transaction_id AS providerTransactionId FROM transactions"
+          `SELECT id,connection_id AS connectionId,provider_transaction_id AS providerTransactionId,
+            transaction_at AS transactionAt,description,amount,provider_updated_at AS providerUpdatedAt,
+            data_updated_at AS dataUpdatedAt,synced_at AS syncedAt FROM transactions`
         )
         .one();
       const sync = sql
@@ -139,14 +159,28 @@ describe("bank store schema migration", () => {
           providerId: "akahu",
         },
         migratedAccount: {
+          availableBalance: 80,
           connectionId: "connection_akahu_default",
+          currentBalance: 100,
+          dataUpdatedAt: time,
           id: "account_acc_1",
+          institution: "BNZ",
+          name: "Everyday",
           providerAccountId: "acc_1",
+          providerBalanceRefreshedAt: time,
+          providerTransactionsRefreshedAt: time,
+          syncedAt: time,
         },
         migratedTransaction: {
+          amount: -5,
           connectionId: "connection_akahu_default",
+          dataUpdatedAt: time,
+          description: "Coffee",
           id: "transaction_tx_1",
           providerTransactionId: "tx_1",
+          providerUpdatedAt: time,
+          syncedAt: time,
+          transactionAt: time,
         },
         sync: { lastSuccessAt: time },
       });
