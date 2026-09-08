@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { BankConnection } from "@/domain/connection";
 import { ConnectionIdSchema } from "@/domain/identifiers";
+import { AkahuDefaultConnectionId } from "@/providers/akahu/constants";
 import { AkahuProviderId, makeAkahuProvider } from "@/providers/akahu/provider";
 
 const now = "2026-08-26T00:00:00.000Z";
@@ -10,7 +11,7 @@ const connection: BankConnection = {
   authorization: { _tag: "Connected" },
   createdAt: now,
   enabled: true,
-  id: Schema.decodeUnknownSync(ConnectionIdSchema)("connection_akahu_test"),
+  id: AkahuDefaultConnectionId,
   label: "Akahu test",
   lastSyncAt: null,
   metadata: {},
@@ -398,6 +399,123 @@ describe("Akahu provider boundary", () => {
       posted: ["acc_a"],
       targetedRefresh: true,
     });
+  });
+
+  it("rejects non-default unscoped Akahu connections before transport", async () => {
+    let calls = 0;
+    const unscopedConnection: BankConnection = {
+      ...connection,
+      id: Schema.decodeUnknownSync(ConnectionIdSchema)("connection_unscoped"),
+    };
+    const provider = makeProvider(() => {
+      calls += 1;
+      return Promise.resolve(Response.json({ items: [], success: true }));
+    });
+    const readError = await Effect.runPromise(
+      Effect.flip(
+        provider.readSnapshot({ connection: unscopedConnection, start: null })
+      )
+    );
+    const refreshError = await Effect.runPromise(
+      Effect.flip(explicitRefresh(provider).request(unscopedConnection))
+    );
+    expect({ calls, readError, refreshError }).toMatchObject({
+      calls: 0,
+      readError: { _tag: "InvalidProviderResponseError" },
+      refreshError: { _tag: "InvalidProviderResponseError" },
+    });
+  });
+
+  it("bounds raw posted transaction work before connection filtering", async () => {
+    const connectionA = scopedConnection("connection_a", "conn_a");
+    const provider = makeProvider((input) => {
+      const url = String(input);
+      if (url.endsWith("/accounts")) {
+        return Promise.resolve(
+          Response.json({
+            items: [
+              {
+                _id: "acc_a",
+                connection: { _id: "conn_a", name: "Bank A" },
+                name: "A",
+                status: "ACTIVE",
+                type: "CHECKING",
+              },
+            ],
+            success: true,
+          })
+        );
+      }
+      if (url.includes("/transactions/pending")) {
+        return Promise.resolve(Response.json({ items: [], success: true }));
+      }
+      return Promise.resolve(
+        Response.json({
+          items: Array.from({ length: 3001 }, (_, index) => ({
+            _account: "acc_other",
+            _id: `tx_${index}`,
+            amount: -1,
+            created_at: now,
+            date: now,
+            description: "Other connection",
+            type: "CARD",
+            updated_at: now,
+          })),
+          success: true,
+        })
+      );
+    });
+    const error = await Effect.runPromise(
+      Effect.flip(
+        provider.readSnapshot({ connection: connectionA, start: null })
+      )
+    );
+    expect(error._tag).toBe("InvalidProviderResponseError");
+  });
+
+  it("bounds scoped pending transaction normalization", async () => {
+    const connectionA = scopedConnection("connection_a", "conn_a");
+    const provider = makeProvider((input) => {
+      const url = String(input);
+      if (url.endsWith("/accounts")) {
+        return Promise.resolve(
+          Response.json({
+            items: [
+              {
+                _id: "acc_a",
+                connection: { _id: "conn_a", name: "Bank A" },
+                name: "A",
+                status: "ACTIVE",
+                type: "CHECKING",
+              },
+            ],
+            success: true,
+          })
+        );
+      }
+      if (url.includes("/transactions/pending")) {
+        return Promise.resolve(
+          Response.json({
+            items: Array.from({ length: 751 }, (_, index) => ({
+              _account: "acc_a",
+              amount: -1,
+              date: now,
+              description: `Pending ${index}`,
+              type: "CARD",
+              updated_at: now,
+            })),
+            success: true,
+          })
+        );
+      }
+      return Promise.resolve(Response.json({ items: [], success: true }));
+    });
+    const error = await Effect.runPromise(
+      Effect.flip(
+        provider.readSnapshot({ connection: connectionA, start: null })
+      )
+    );
+    expect(error._tag).toBe("InvalidProviderResponseError");
   });
 
   it("uses the configured refresh cooldown", () => {

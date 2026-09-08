@@ -30,24 +30,29 @@ jobs:
           AKAHU_APP_TOKEN: ${{ secrets.AKAHU_APP_TOKEN }}
           AKAHU_USER_TOKEN: ${{ secrets.AKAHU_USER_TOKEN }}
           API_BEARER_TOKEN: ${{ secrets.API_BEARER_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           test -n "$ACCESS_POLICY_AUD"
           test -n "$AKAHU_APP_TOKEN"
           test -n "$AKAHU_USER_TOKEN"
           test -n "$API_BEARER_TOKEN"
+          test -n "$CLOUDFLARE_API_TOKEN"
 
-      - name: Validate preview Access audience
+      - name: Validate preview deployment credentials
         if: >-
           github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request'
         shell: bash
         env:
+          CLOUDFLARE_PREVIEW_API_TOKEN: ${{ secrets.CLOUDFLARE_PREVIEW_API_TOKEN }}
           PREVIEW_ACCESS_POLICY_AUD: ${{ vars.PREVIEW_ACCESS_POLICY_AUD }}
-        run: test -n "$PREVIEW_ACCESS_POLICY_AUD"
+        run: |
+          test -n "$CLOUDFLARE_PREVIEW_API_TOKEN"
+          test -n "$PREVIEW_ACCESS_POLICY_AUD"
 
       - name: Run Alchemy deployment
         # The trusted action keeps exact-SHA/fork policy centralized. Preview code
-        # receives inert application credentials; only a successful main push gets
-        # live financial-provider and production API credentials.
+        # receives inert application credentials and a dedicated least-privileged
+        # Cloudflare token; only a successful main push gets production credentials.
         uses: mynameistito/alchemy-deploy@d42b56ce1471dde5c5654c722b79701a1c60e9eb # v2.2.0
         env:
           AKAHU_APP_TOKEN: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && secrets.AKAHU_APP_TOKEN || 'preview-provider-disabled' }}
@@ -55,7 +60,7 @@ jobs:
           API_BEARER_TOKEN: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && secrets.API_BEARER_TOKEN || 'preview-api-token' }}
           ACCESS_POLICY_AUD: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && secrets.ACCESS_POLICY_AUD || vars.PREVIEW_ACCESS_POLICY_AUD }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && secrets.CLOUDFLARE_API_TOKEN || secrets.CLOUDFLARE_PREVIEW_API_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ACCESS_APP_HOSTNAME: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' && format('bankglass-pr-{0}.{1}.workers.dev', github.event.workflow_run.pull_requests[0].number, vars.CLOUDFLARE_WORKERS_SUBDOMAIN) || vars.ACCESS_APP_HOSTNAME || 'bank.honetito.com' }}
           ACCESS_TEAM_DOMAIN: ${{ vars.ACCESS_TEAM_DOMAIN }}

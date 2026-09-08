@@ -48,25 +48,41 @@ const runAfterRetryDelay = (service: SyncServiceService) =>
   );
 
 describe("scheduled synchronization policy", () => {
-  it.each(["RefreshCooldownError", "SyncInProgressError"])(
-    "does not retry a %s deferral",
-    async (errorTag) => {
-      let connectionCalls = 0;
-      const service: SyncServiceService = {
-        synchronizeConnection: () =>
-          Effect.sync(() => {
-            connectionCalls += 1;
-            return success;
-          }),
-        synchronizeEnabled: () => Effect.succeed([failure(errorTag)]),
-      };
+  it("does not retry an active-lease deferral", async () => {
+    let connectionCalls = 0;
+    const service: SyncServiceService = {
+      synchronizeConnection: () =>
+        Effect.sync(() => {
+          connectionCalls += 1;
+          return success;
+        }),
+      synchronizeEnabled: () =>
+        Effect.succeed([failure("SyncInProgressError")]),
+    };
+    const outcomes = await Effect.runPromise(synchronizeScheduled(service));
+    expect({ connectionCalls, outcomes }).toStrictEqual({
+      connectionCalls: 0,
+      outcomes: [failure("SyncInProgressError")],
+    });
+  });
 
-      const outcomes = await Effect.runPromise(synchronizeScheduled(service));
-
-      expect(outcomes).toStrictEqual([failure(errorTag)]);
-      expect(connectionCalls).toBe(0);
-    }
-  );
+  it("reads provider cache immediately when the first pass hits refresh cooldown", async () => {
+    const refreshModes: string[] = [];
+    const service: SyncServiceService = {
+      synchronizeConnection: ({ refresh }) =>
+        Effect.sync(() => {
+          refreshModes.push(refresh);
+          return success;
+        }),
+      synchronizeEnabled: () =>
+        Effect.succeed([failure("RefreshCooldownError")]),
+    };
+    const outcomes = await Effect.runPromise(synchronizeScheduled(service));
+    expect({ outcomes, refreshModes }).toStrictEqual({
+      outcomes: [success],
+      refreshModes: ["ReadAvailable"],
+    });
+  });
 
   it("retries a failed connection and keeps a successful retry", async () => {
     const refreshModes: string[] = [];

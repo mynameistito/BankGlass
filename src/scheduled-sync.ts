@@ -8,9 +8,6 @@ type FailedConnectionSync = Extract<
   { readonly _tag: "Failure" }
 >;
 
-const isDeferralTag = (errorTag: string) =>
-  errorTag === "RefreshCooldownError" || errorTag === "SyncInProgressError";
-
 const failureOutcome = (
   original: FailedConnectionSync,
   errorTag: string
@@ -20,6 +17,22 @@ const failureOutcome = (
   errorTag,
   providerId: original.providerId,
 });
+
+const readAvailableConnection = (
+  service: SyncServiceService,
+  original: FailedConnectionSync
+) =>
+  service
+    .synchronizeConnection({
+      connectionId: original.connectionId,
+      refresh: "ReadAvailable",
+    })
+    .pipe(
+      Effect.match({
+        onFailure: (error) => failureOutcome(original, error._tag),
+        onSuccess: (success): ConnectionSyncOutcome => success,
+      })
+    );
 
 const retryConnection = (
   service: SyncServiceService,
@@ -38,7 +51,6 @@ const retryConnection = (
     if (refreshed.failure._tag === "SyncInProgressError") {
       return failureOutcome(original, refreshed.failure._tag);
     }
-
     yield* Effect.logWarning(
       "Scheduled refresh retry failed; reading current provider cache",
       {
@@ -47,40 +59,44 @@ const retryConnection = (
         providerId: original.providerId,
       }
     );
-    return yield* service
-      .synchronizeConnection({
-        connectionId: original.connectionId,
-        refresh: "ReadAvailable",
-      })
-      .pipe(
-        Effect.match({
-          onFailure: (error) => failureOutcome(original, error._tag),
-          onSuccess: (success): ConnectionSyncOutcome => success,
-        })
-      );
+    return yield* readAvailableConnection(service, original);
   });
 
 const isRetryableFailure = (
   outcome: ConnectionSyncOutcome
 ): outcome is FailedConnectionSync =>
-  outcome._tag === "Failure" && !isDeferralTag(outcome.errorTag);
+  outcome._tag === "Failure" && outcome.errorTag !== "SyncInProgressError";
 
-/**
- * Run scheduled synchronization across enabled connections with isolated retries.
- *
- * Deferrals caused by a connection refresh cooldown or active lease are left alone.
- * Other failed connections retry once after one minute and then fall back to reading
- * the provider's currently available cache without requesting another refresh.
- */
+/** Run scheduled synchronization across enabled connections with isolated retries. */
 export const synchronizeScheduled = (service: SyncServiceService) =>
   Effect.gen(function* synchronizeScheduledSync() {
     const first = yield* service.synchronizeEnabled({
       refresh: "RequestIfSupported",
     });
-    const retryable = first.filter(isRetryableFailure);
-
-    for (const outcome of first) {
-      if (outcome._tag === "Failure" && isDeferralTag(outcome.errorTag)) {
+    const afterCooldownFallback = yield* Effect.all(
+      first.map((outcome) => {
+        if (
+          outcome._tag !== "Failure" ||
+          outcome.errorTag !== "RefreshCooldownError"
+        ) {
+          return Effect.succeed(outcome);
+        }
+        return Effect.logInfo(
+          "Scheduled refresh deferred; reading current provider cache",
+          {
+            connectionId: outcome.connectionId,
+            providerId: outcome.providerId,
+          }
+        ).pipe(Effect.andThen(readAvailableConnection(service, outcome)));
+      }),
+      { concurrency: 4 }
+    );
+    const retryable = afterCooldownFallback.filter(isRetryableFailure);
+    for (const outcome of afterCooldownFallback) {
+      if (
+        outcome._tag === "Failure" &&
+        outcome.errorTag === "SyncInProgressError"
+      ) {
         yield* Effect.logInfo("Scheduled connection synchronization deferred", {
           connectionId: outcome.connectionId,
           errorTag: outcome.errorTag,
@@ -88,17 +104,14 @@ export const synchronizeScheduled = (service: SyncServiceService) =>
         });
       }
     }
-
     if (retryable.length === 0) {
-      return first;
+      return afterCooldownFallback;
     }
-
     yield* Effect.logWarning(
       "Scheduled connection synchronization failed; retrying failed connections in one minute",
       { failedConnections: retryable.length }
     );
     yield* Effect.sleep("1 minute");
-
     const retries = yield* Effect.all(
       retryable.map((original) => retryConnection(service, original)),
       { concurrency: 4 }
@@ -106,11 +119,10 @@ export const synchronizeScheduled = (service: SyncServiceService) =>
     const retriedIds = new Set(
       retryable.map((outcome) => outcome.connectionId)
     );
-    const retained: ConnectionSyncOutcome[] = [];
-    for (const outcome of first) {
-      if (!retriedIds.has(outcome.connectionId)) {
-        retained.push(outcome);
-      }
-    }
-    return [...retained, ...retries];
+    return [
+      ...afterCooldownFallback.filter(
+        (outcome) => !retriedIds.has(outcome.connectionId)
+      ),
+      ...retries,
+    ];
   });

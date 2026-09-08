@@ -21,6 +21,7 @@ import type {
   BankProviderAdapter,
   BankProviderError,
 } from "@/provider-registry";
+import { AkahuDefaultConnectionId } from "@/providers/akahu/constants";
 import {
   AccountsResponse,
   PendingResponse,
@@ -30,6 +31,8 @@ import {
 
 const maxTransactionPages = 100;
 const maxPostedTransactions = 750;
+const maxPendingTransactions = 750;
+const maxRawTransactionItems = 3000;
 
 /** Stable provider ID for the bundled Akahu adapter. */
 export const AkahuProviderId =
@@ -57,6 +60,20 @@ const canonicalIso = (value: string) => new Date(value).toISOString();
 
 const upstreamConnectionId = (connection: BankConnection) =>
   connection.metadata["akahuConnectionId"] ?? null;
+
+const resolveUpstreamConnectionId = (connection: BankConnection) =>
+  Effect.gen(function* resolveConnectionScope() {
+    const connectionId = upstreamConnectionId(connection);
+    if (connectionId !== null || connection.id === AkahuDefaultConnectionId) {
+      return connectionId;
+    }
+    return yield* Effect.fail(
+      new InvalidProviderResponseError({
+        details: "Akahu connection requires metadata.akahuConnectionId",
+        operation: "resolveConnection",
+      })
+    );
+  });
 
 const normalizeAccounts = (
   response: typeof AccountsResponse.Type,
@@ -267,13 +284,13 @@ export const makeAkahuProvider = (
 
   const readAccounts = (connection: BankConnection) =>
     Effect.gen(function* loadAccounts() {
+      const connectionId = yield* resolveUpstreamConnectionId(connection);
       const now = yield* nowIso;
       const response = yield* request(
         "getAccounts",
         "/accounts",
         AccountsResponse
       );
-      const connectionId = upstreamConnectionId(connection);
       const scopedResponse =
         connectionId === null
           ? response
@@ -294,6 +311,7 @@ export const makeAkahuProvider = (
     Effect.gen(function* readPostedTransactions() {
       const items: ProviderPostedTransaction[] = [];
       const seenCursors = new Set<string>();
+      let rawItems = 0;
       let cursor: string | null = null;
       let page = 0;
       do {
@@ -318,6 +336,15 @@ export const makeAkahuProvider = (
           `/transactions?${query.toString()}`,
           TransactionsResponse
         );
+        rawItems += response.items.length;
+        if (rawItems > maxRawTransactionItems) {
+          return yield* Effect.fail(
+            new InvalidProviderResponseError({
+              details: `Response exceeded ${maxRawTransactionItems} raw transactions`,
+              operation: "getTransactions",
+            })
+          );
+        }
         const scopedItems = response.items.filter((item) =>
           allowedAccountIds.has(item._account)
         );
@@ -387,19 +414,40 @@ export const makeAkahuProvider = (
         "/transactions/pending",
         PendingResponse
       );
+      if (response.items.length > maxRawTransactionItems) {
+        return yield* Effect.fail(
+          new InvalidProviderResponseError({
+            details: `Response exceeded ${maxRawTransactionItems} raw pending transactions`,
+            operation: "getPendingTransactions",
+          })
+        );
+      }
+      const scopedItems = response.items.filter((item) =>
+        allowedAccountIds.has(item._account)
+      );
+      if (scopedItems.length > maxPendingTransactions) {
+        return yield* Effect.fail(
+          new InvalidProviderResponseError({
+            details: `Response exceeded ${maxPendingTransactions} pending transactions`,
+            operation: "getPendingTransactions",
+          })
+        );
+      }
       return yield* Effect.all(
-        response.items
-          .filter((item) => allowedAccountIds.has(item._account))
-          .map((item) => normalizePendingTransaction(item, currencyByAccount))
+        scopedItems.map((item) =>
+          normalizePendingTransaction(item, currencyByAccount)
+        )
       );
     });
 
-  const refreshPath = (connection: BankConnection) => {
-    const connectionId = upstreamConnectionId(connection);
-    return connectionId === null
-      ? "/refresh"
-      : `/refresh/${encodeURIComponent(connectionId)}`;
-  };
+  const refreshPath = (connection: BankConnection) =>
+    resolveUpstreamConnectionId(connection).pipe(
+      Effect.map((connectionId) =>
+        connectionId === null
+          ? "/refresh"
+          : `/refresh/${encodeURIComponent(connectionId)}`
+      )
+    );
 
   return {
     displayName: "Akahu",
@@ -430,9 +478,12 @@ export const makeAkahuProvider = (
       minimumInterval: Duration.seconds(config.refreshCooldownSeconds ?? 3600),
       propagationDelay: Duration.seconds(5),
       request: (connection) =>
-        request("requestRefresh", refreshPath(connection), RefreshResponse, {
-          method: "POST",
-        }).pipe(Effect.asVoid),
+        refreshPath(connection).pipe(
+          Effect.flatMap((path) =>
+            request("requestRefresh", path, RefreshResponse, { method: "POST" })
+          ),
+          Effect.asVoid
+        ),
     },
   };
 };

@@ -27,9 +27,9 @@ import {
   NotFoundError,
   SyncInProgressError,
 } from "@/errors";
+import { AkahuDefaultConnectionId } from "@/providers/akahu/constants";
 
 const schemaVersion = 2;
-const defaultAkahuConnectionId = "connection_akahu_default";
 const akahuProviderId = "akahu";
 const syncLeaseSeconds = 5 * 60;
 const migrationEpoch = "1970-01-01T00:00:00.000Z";
@@ -191,7 +191,7 @@ const insertDefaultAkahuConnection = (sql: SqlStorage, now: string) => {
     `INSERT OR IGNORE INTO connections(
       id,provider_id,enabled,label,authorization_json,metadata_json,created_at,updated_at,last_sync_at
     ) VALUES(?,?,?,?,?,?,?,?,NULL)`,
-    defaultAkahuConnectionId,
+    AkahuDefaultConnectionId,
     akahuProviderId,
     1,
     "Akahu Personal App",
@@ -202,7 +202,7 @@ const insertDefaultAkahuConnection = (sql: SqlStorage, now: string) => {
   );
   sql.exec(
     "INSERT OR IGNORE INTO sync_state(connection_id,provider_id,status) VALUES(?,?,'idle')",
-    defaultAkahuConnectionId,
+    AkahuDefaultConnectionId,
     akahuProviderId
   );
 };
@@ -226,7 +226,7 @@ const migrateLegacySchema = (sql: SqlStorage, now: string) => {
       formatted_account,holder_name,provider_balance_refreshed_at,provider_transactions_refreshed_at,
       data_updated_at,synced_at
     FROM accounts_legacy`,
-    defaultAkahuConnectionId,
+    AkahuDefaultConnectionId,
     akahuProviderId
   );
   sql.exec(
@@ -240,14 +240,14 @@ const migrateLegacySchema = (sql: SqlStorage, now: string) => {
       balance,merchant_name,category_name,particulars,code,reference,other_account,card_suffix,
       provider_created_at,provider_updated_at,data_updated_at,synced_at,'legacy-migration'
     FROM transactions_legacy`,
-    defaultAkahuConnectionId,
+    AkahuDefaultConnectionId,
     akahuProviderId
   );
   sql.exec(
     `UPDATE connections SET last_sync_at=(
       SELECT last_success_at FROM sync_state_legacy WHERE singleton=1
     ) WHERE id=?`,
-    defaultAkahuConnectionId
+    AkahuDefaultConnectionId
   );
   sql.exec(
     `UPDATE sync_state SET
@@ -261,7 +261,7 @@ const migrateLegacySchema = (sql: SqlStorage, now: string) => {
       error_message=(SELECT error_message FROM sync_state_legacy WHERE singleton=1),
       lease_id=(SELECT lease_id FROM sync_state_legacy WHERE singleton=1)
     WHERE connection_id=?`,
-    defaultAkahuConnectionId
+    AkahuDefaultConnectionId
   );
   sql.exec("DROP TABLE accounts_legacy");
   sql.exec("DROP TABLE transactions_legacy");
@@ -899,6 +899,7 @@ const isCommandName = (name: string): name is keyof typeof commandHandlers =>
   name in commandHandlers;
 
 const transactionalCommands = new Set<keyof typeof commandHandlers>([
+  "completeSync",
   "deleteConnection",
   "reset",
   "saveConnection",
@@ -931,10 +932,7 @@ export class BankStoreDO extends DurableObject {
         ? this.ctx.storage.transactionSync(execute)
         : execute();
     } catch (error) {
-      console.error("bank store command failed", {
-        cause: String(error),
-        command: input.name,
-      });
+      console.error("bank store command failed", { command: input.name });
       const databaseError = new DatabaseError({
         cause: error,
         operation: "command",
