@@ -1,6 +1,6 @@
 import { Data } from "effect";
 
-/** Indicates that Akahu throttled a provider request. */
+/** Indicates that an upstream provider throttled a request. */
 export class ProviderRateLimitError extends Data.TaggedError(
   "ProviderRateLimitError"
 )<{
