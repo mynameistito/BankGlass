@@ -187,8 +187,7 @@ const routeRequestProgram = (request: Request, config: RuntimeConfig) =>
       return json({ data: page.items, nextCursor: page.nextCursor });
     }
     if (request.method === "GET" && url.pathname === "/v1/status") {
-      const statuses = yield* store.listSyncStatuses;
-      return json({ data: statuses.length === 1 ? statuses[0] : statuses });
+      return json({ data: yield* store.listSyncStatuses });
     }
     if (request.method === "POST" && url.pathname === "/v1/refresh") {
       const sync = yield* SyncService;
