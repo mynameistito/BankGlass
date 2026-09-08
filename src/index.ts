@@ -27,6 +27,7 @@ const programLayer = (env: WorkerEnv, lookbackDays: number) => {
           makeAkahuProvider({
             appToken: Redacted.make(env.AKAHU_APP_TOKEN),
             baseUrl: env.AKAHU_API_BASE_URL,
+            refreshCooldownSeconds: Number(env.REFRESH_COOLDOWN_SECONDS),
             userToken: Redacted.make(env.AKAHU_USER_TOKEN),
           }),
         ];
