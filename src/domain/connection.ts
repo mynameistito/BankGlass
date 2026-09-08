@@ -1,12 +1,11 @@
 import { Schema } from "effect";
 
-import { ConnectionIdSchema, ProviderIdSchema } from "@/domain/identifiers";
-
-const IsoDateTimeSchema = Schema.String.pipe(
-  Schema.check(
-    Schema.makeFilter((value: string) => !Number.isNaN(Date.parse(value)))
-  )
-);
+import {
+  ConnectionIdSchema,
+  IsoDateTimeSchema,
+  NonEmptyStringSchema,
+  ProviderIdSchema,
+} from "@/domain/identifiers";
 
 const ConnectionAuthorizationSchema = Schema.Union([
   Schema.Struct({ _tag: Schema.Literal("PendingAuthorization") }),
@@ -26,7 +25,7 @@ export const BankConnectionSchema = Schema.Struct({
   createdAt: IsoDateTimeSchema,
   enabled: Schema.Boolean,
   id: ConnectionIdSchema,
-  label: Schema.String.pipe(Schema.check(Schema.isMinLength(1))),
+  label: NonEmptyStringSchema,
   lastSyncAt: Schema.NullOr(IsoDateTimeSchema),
   metadata: Schema.Record(Schema.String, Schema.String),
   providerId: ProviderIdSchema,
