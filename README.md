@@ -143,7 +143,8 @@ Set these secrets in your environment for a local deployment, or as GitHub repos
 | `API_BEARER_TOKEN` | Additional authentication for `/v1/*` routes |
 | `ACCESS_POLICY_AUD` | Audience tag of the Access application |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account for non-interactive deployment |
-| `CLOUDFLARE_API_TOKEN` | Cloudflare credential for non-interactive deployment |
+| `CLOUDFLARE_API_TOKEN` | Production Cloudflare credential for non-interactive deployment |
+| `CLOUDFLARE_PREVIEW_API_TOKEN` | Least-privileged Cloudflare credential used only for same-repository PR previews |
 
 Set these non-secret values:
 
@@ -156,6 +157,7 @@ Set these non-secret values:
 | `REFRESH_COOLDOWN_SECONDS` | `3600` | `3600` |
 | `SYNC_LOOKBACK_DAYS` | `14` | `14` |
 | `CLOUDFLARE_WORKERS_SUBDOMAIN` | Your Workers subdomain | Required for PR previews |
+| `PREVIEW_ACCESS_POLICY_AUD` | Audience tag of the preview Access application | Required for PR previews |
 
 For a local production deployment, load the values into the environment and run:
 
@@ -164,7 +166,7 @@ $env:STAGE = "prod"
 bun run deploy
 ```
 
-For CI, the workflow does not use your local Alchemy profile. It runs non-interactively with `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` configured as GitHub secrets, and passes `--yes` to Alchemy. `CLOUDFLARE_WORKERS_SUBDOMAIN` is also required when preview deployments are enabled.
+For CI, the workflow does not use your local Alchemy profile. Production deploys use `CLOUDFLARE_API_TOKEN`; same-repository PR previews use the separate, least-privileged `CLOUDFLARE_PREVIEW_API_TOKEN`. Both run non-interactively with `CLOUDFLARE_ACCOUNT_ID` and pass `--yes` to Alchemy. `CLOUDFLARE_WORKERS_SUBDOMAIN` and `PREVIEW_ACCESS_POLICY_AUD` are also required when preview deployments are enabled.
 
 The included deployment workflow deploys `main` after CI succeeds and creates previews for same-repository pull requests. After the first deployment:
 
@@ -185,8 +187,10 @@ Every REST request needs both a valid Cloudflare Access identity and `Authorizat
 | `GET` | `/v1/accounts/:accountId/transactions` | List posted transactions for one account |
 | `GET` | `/v1/accounts/:accountId/pending` | List pending transactions for one account |
 | `GET` | `/v1/transactions` | List posted transactions across all accounts |
-| `GET` | `/v1/status` | Get refresh and synchronization status |
+| `GET` | `/v1/status` | List refresh and synchronization status for every configured connection |
 | `POST` | `/v1/refresh` | Ask Akahu to refresh, then synchronize its current cache |
+
+`GET /v1/status` always returns `data` as an array, with one status object per configured connection.
 
 Transaction routes accept `from`, `to`, `limit`, and `cursor`. Dates must be ISO 8601 date-times. `limit` defaults to 50 and may be 1-200. Results use newest-first keyset pagination.
 
@@ -210,7 +214,7 @@ The stateless Streamable HTTP endpoint is `https://domain.tld/mcp`. It provides 
 | `list_accounts` | List cached accounts and balances |
 | `get_balance` | Get one balance and its freshness timestamps |
 | `list_transactions` | List posted or pending transactions with filters and cursor pagination |
-| `get_sync_status` | Get synchronization state and Akahu freshness |
+| `get_sync_status` | List synchronization state and provider freshness for every configured connection |
 
 There is no refresh or payment tool, so an MCP client cannot trigger upstream activity or mutate financial data.
 
@@ -254,7 +258,7 @@ Akahu reads are cached, and refresh requests are asynchronous. A successful Bank
 - `lastProviderRefreshRequestedAt`: when BankGlass asked Akahu to refresh.
 - `lastSuccessAt`: when the complete Akahu-to-cache sync last succeeded.
 
-The default schedule runs hourly at 17 minutes past the hour UTC. A failed scheduled sync retries once after one minute; if the upstream refresh already succeeded, the retry falls back to synchronizing Akahu's current cache without requesting another refresh. Manual refreshes have a one-hour cooldown to match the Akahu Personal App refresh policy. Posted transactions are reconciled across the latest 14 days by default, with a safety limit of 750 transactions or 100 provider pages per sync. Pending transactions are replaced on each sync because Akahu does not provide stable IDs for them.
+The default schedule runs hourly at 17 minutes past the hour UTC. A failed scheduled sync retries once after one minute; if the upstream refresh already succeeded, the retry falls back to synchronizing Akahu's current cache without requesting another refresh. Manual refreshes have a one-hour cooldown to match the Akahu Personal App refresh policy. Posted transactions are reconciled across the latest 14 days by default, with a safety limit of 750 scoped transactions, 3,000 raw provider items, or 100 provider pages per sync. Pending synchronization is also bounded before normalization. Pending transactions are replaced on each sync because Akahu does not provide stable IDs for them.
 
 ## Security Model
 

@@ -1,19 +1,39 @@
 import { env } from "cloudflare:test";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import { BankStore } from "@/bank-store";
 import { doBankStoreLive, isStoreStub } from "@/bank-store-do";
+import type { BankAccount, ProviderAccount } from "@/domain/account";
+import type { BankConnection } from "@/domain/connection";
+import {
+  ConnectionIdSchema,
+  ProviderAccountIdSchema,
+  ProviderIdSchema,
+  ProviderTransactionIdSchema,
+} from "@/domain/identifiers";
 import type {
-  BankAccount,
-  PendingTransaction,
-  PostedTransaction,
-} from "@/domain";
+  ProviderPendingTransaction,
+  ProviderPostedTransaction,
+  TransactionRecord,
+} from "@/domain/transaction";
 import { routeMcpRequest, validateMcpTransactionQuery } from "@/mcp-api";
 
 const hostname = "bank.example.test";
 const time = "2026-08-26T00:00:00.000Z";
+const connectionId = Schema.decodeUnknownSync(ConnectionIdSchema)(
+  "connection_akahu_default"
+);
+const providerId = Schema.decodeUnknownSync(ProviderIdSchema)("akahu");
+const secondConnectionId = Schema.decodeUnknownSync(ConnectionIdSchema)(
+  "connection_simplefin_status"
+);
+const secondProviderId =
+  Schema.decodeUnknownSync(ProviderIdSchema)("simplefin");
+const providerAccountId = Schema.decodeUnknownSync(ProviderAccountIdSchema)(
+  "account_test"
+);
 const getStore = () =>
   Effect.runPromise(
     BankStore.pipe(Effect.provide(doBankStoreLive(env.BANK_STORE)))
@@ -26,26 +46,26 @@ const resetStore = async () => {
   await stub.command({ args: [], name: "reset" });
 };
 
-const account: BankAccount = {
+const providerAccount: ProviderAccount = {
   availableBalance: 18,
   currency: "NZD",
   currentBalance: 20,
   dataUpdatedAt: time,
   formattedAccount: null,
   holderName: null,
-  id: "account_test",
   institution: "BNZ",
   name: "Everyday",
+  providerAccountId,
   providerBalanceRefreshedAt: time,
-  providerId: "provider_account_test",
   providerTransactionsRefreshedAt: time,
   status: "active",
-  syncedAt: time,
   type: "checking",
 };
 
-const transaction = (id: string, transactionAt: string): PostedTransaction => ({
-  accountId: account.id,
+const transaction = (
+  providerTransactionId: string,
+  transactionAt: string
+): ProviderPostedTransaction => ({
   amount: -5,
   balance: 20,
   cardSuffix: null,
@@ -54,39 +74,45 @@ const transaction = (id: string, transactionAt: string): PostedTransaction => ({
   currency: "NZD",
   dataUpdatedAt: time,
   description: "Coffee",
-  id,
   merchantName: "Cafe",
   otherAccount: null,
   particulars: null,
+  providerAccountId,
   providerCreatedAt: time,
-  providerId: `provider_${id}`,
+  providerTransactionId: Schema.decodeUnknownSync(ProviderTransactionIdSchema)(
+    providerTransactionId
+  ),
   providerUpdatedAt: time,
   reference: null,
   status: "posted",
-  syncedAt: time,
   transactionAt,
   type: "EFTPOS",
 });
 
-const pending: PendingTransaction = {
-  accountId: account.id,
+const pending: ProviderPendingTransaction = {
   amount: -3,
   cardSuffix: null,
   code: null,
   currency: "NZD",
   dataUpdatedAt: time,
   description: "Pending coffee",
-  id: "pending_test",
   otherAccount: null,
   particulars: null,
-  providerId: "provider_pending_test",
+  providerAccountId,
+  providerTransactionId: Schema.decodeUnknownSync(ProviderTransactionIdSchema)(
+    "pending_test"
+  ),
   providerUpdatedAt: time,
   reference: null,
   status: "pending",
-  syncedAt: time,
   transactionAt: "2026-08-25T12:00:00.000Z",
   type: "EFTPOS",
 };
+
+let account: BankAccount;
+let postedNew: TransactionRecord;
+let postedOld: TransactionRecord;
+let pendingStored: TransactionRecord;
 
 interface RpcRequest {
   readonly id: number;
@@ -141,21 +167,74 @@ describe("MCP protocol boundary", () => {
   beforeEach(async () => {
     await resetStore();
     const store = await getStore();
-    await Effect.runPromise(store.acquireSync(time, "mcp-test", null));
+    await Effect.runPromise(
+      store.acquireSync(connectionId, time, "mcp-test", null)
+    );
     await Effect.runPromise(
       store.saveSnapshot({
-        accounts: [account],
+        accounts: [providerAccount],
+        connectionId,
         leaseId: "mcp-test",
         pending: [pending],
         posted: [
           transaction("transaction_new", "2026-08-25T00:00:00.000Z"),
           transaction("transaction_old", "2026-08-24T00:00:00.000Z"),
         ],
+        providerId,
         reconcilePostedFrom: "2026-08-23T00:00:00.000Z",
         syncedAt: time,
       })
     );
-    await Effect.runPromise(store.completeSync(time, null, "mcp-test"));
+    await Effect.runPromise(
+      store.completeSync(connectionId, time, null, "mcp-test")
+    );
+    const accounts = await Effect.runPromise(
+      store.listAccounts({ connectionId, providerId: null })
+    );
+    const posted = await Effect.runPromise(
+      store.listTransactions({
+        accountId: null,
+        connectionId,
+        cursor: null,
+        from: null,
+        limit: 10,
+        providerId: null,
+        status: "posted",
+        to: null,
+      })
+    );
+    const pendingPage = await Effect.runPromise(
+      store.listTransactions({
+        accountId: null,
+        connectionId,
+        cursor: null,
+        from: null,
+        limit: 10,
+        providerId: null,
+        status: "pending",
+        to: null,
+      })
+    );
+    const [seededAccount] = accounts;
+    const seededNew = posted.items.find(
+      (item) => item.providerTransactionId === "transaction_new"
+    );
+    const seededOld = posted.items.find(
+      (item) => item.providerTransactionId === "transaction_old"
+    );
+    const [seededPending] = pendingPage.items;
+    if (
+      seededAccount === undefined ||
+      seededNew === undefined ||
+      seededOld === undefined ||
+      seededPending === undefined
+    ) {
+      throw new TypeError("Expected seeded MCP records");
+    }
+    account = seededAccount;
+    postedNew = seededNew;
+    postedOld = seededOld;
+    pendingStored = seededPending;
   });
 
   it("initializes and lists all read-only tools", async () => {
@@ -236,7 +315,7 @@ describe("MCP protocol boundary", () => {
       result: {
         content: [{ text: expect.stringContaining('"nextCursor":"') }],
         structuredContent: {
-          items: [{ id: "transaction_new" }],
+          items: [{ providerTransactionId: "transaction_new" }],
           nextCursor: expect.any(String),
         },
       },
@@ -246,9 +325,38 @@ describe("MCP protocol boundary", () => {
     expect(status.message).toMatchObject({
       result: {
         content: [{ text: expect.stringContaining('"status":"idle"') }],
-        structuredContent: { status: "idle" },
+        structuredContent: {
+          result: [{ connectionId, providerId, status: "idle" }],
+        },
       },
     });
+  });
+
+  it("returns all connection statuses without inferring a primary connection", async () => {
+    const store = await getStore();
+    const secondConnection: BankConnection = {
+      authorization: { _tag: "Connected" },
+      createdAt: time,
+      enabled: true,
+      id: secondConnectionId,
+      label: "SimpleFIN status",
+      lastSyncAt: null,
+      metadata: {},
+      providerId: secondProviderId,
+      updatedAt: time,
+    };
+    await Effect.runPromise(store.saveConnection(secondConnection));
+
+    const status = await callTool(5, "get_sync_status");
+    const message = toolResponseSchema.parse(status.message);
+    const statuses = z
+      .array(z.object({ connectionId: z.string(), providerId: z.string() }))
+      .parse(JSON.parse(message.result.content[0]?.text ?? "[]"));
+
+    expect(statuses).toStrictEqual([
+      { connectionId, providerId },
+      { connectionId: secondConnectionId, providerId: secondProviderId },
+    ]);
   });
 
   it("paginates transaction results using the returned cursor", async () => {
@@ -266,16 +374,16 @@ describe("MCP protocol boundary", () => {
     });
     expect(next.message).toMatchObject({
       result: {
-        content: [{ text: expect.stringContaining('"transaction_old"') }],
+        content: [{ text: expect.stringContaining(postedOld.id) }],
       },
     });
-    expect(firstPage.items[0]?.id).not.toBe("transaction_old");
+    expect(firstPage.items[0]?.id).toBe(postedNew.id);
 
     const pendingPage = await callTool(3, "list_transactions", {
       status: "pending",
     });
     expect(pendingPage.message).toMatchObject({
-      result: { structuredContent: { items: [{ id: "pending_test" }] } },
+      result: { structuredContent: { items: [{ id: pendingStored.id }] } },
     });
   });
 

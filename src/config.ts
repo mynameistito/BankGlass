@@ -1,5 +1,6 @@
 import { Effect, Schema } from "effect";
 
+import { NonEmptyStringSchema } from "@/domain/identifiers";
 import { InvalidRequestError } from "@/errors";
 
 const PositiveIntegerString = Schema.String.pipe(
@@ -8,9 +9,6 @@ const PositiveIntegerString = Schema.String.pipe(
       (value: string) => /^\d+$/u.test(value) && Number(value) > 0
     )
   )
-);
-const NonEmptyString = Schema.String.pipe(
-  Schema.check(Schema.makeFilter((value: string) => value.trim().length > 0))
 );
 const HttpsOrigin = Schema.String.pipe(
   Schema.check(
@@ -55,12 +53,12 @@ const Hostname = Schema.String.pipe(
 );
 const RuntimeConfigSchema = Schema.Struct({
   accessAppHostname: Hostname,
-  accessAudience: Schema.String.pipe(Schema.check(Schema.isMinLength(1))),
+  accessAudience: NonEmptyStringSchema,
   accessTeamDomain: HttpsOrigin,
-  akahuAppToken: NonEmptyString,
-  akahuUserToken: NonEmptyString,
+  akahuAppToken: NonEmptyStringSchema,
+  akahuUserToken: NonEmptyStringSchema,
   apiBaseUrl: HttpsApiBaseUrl,
-  apiBearerToken: NonEmptyString,
+  apiBearerToken: NonEmptyStringSchema,
   apiRateLimitPerMinute: PositiveIntegerString,
   refreshCooldownSeconds: PositiveIntegerString,
   syncLookbackDays: PositiveIntegerString,
