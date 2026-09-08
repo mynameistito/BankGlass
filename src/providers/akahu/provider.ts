@@ -266,7 +266,7 @@ export const makeAkahuProvider = (
   };
 
   const readAccounts = (connection: BankConnection) =>
-    Effect.gen(function* readAccounts() {
+    Effect.gen(function* loadAccounts() {
       const now = yield* nowIso;
       const response = yield* request(
         "getAccounts",
