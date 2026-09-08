@@ -144,16 +144,16 @@ describe("Cloudflare HTTP boundary", () => {
     const response = await requestApi(
       new Request("https://example.test/v1/status", { headers })
     );
-    const body = (await response.json()) as {
-      data: Array<{ connectionId: string; providerId: string }>;
-    };
+    const body = await response.json();
 
-    expect({ responseStatus: response.status, statuses: body.data }).toMatchObject({
+    expect({ responseStatus: response.status, body }).toMatchObject({
+      body: {
+        data: [
+          { connectionId, providerId },
+          { connectionId: secondConnectionId, providerId: secondProviderId },
+        ],
+      },
       responseStatus: 200,
-      statuses: [
-        { connectionId, providerId },
-        { connectionId: secondConnectionId, providerId: secondProviderId },
-      ],
     });
   });
 
