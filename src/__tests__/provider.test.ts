@@ -1,4 +1,4 @@
-import { Effect, Redacted, Schema } from "effect";
+import { Duration, Effect, Redacted, Schema } from "effect";
 import { describe, expect, it, vi } from "vitest";
 
 import type { BankConnection } from "@/domain/connection";
@@ -408,8 +408,8 @@ describe("Akahu provider boundary", () => {
       userToken: Redacted.make("user"),
     });
 
-    expect(explicitRefresh(provider).minimumInterval).toStrictEqual(
-      Effect.runSync(Effect.succeed(explicitRefresh(provider).minimumInterval))
+    expect(Duration.toSeconds(explicitRefresh(provider).minimumInterval)).toBe(
+      123
     );
   });
 });
