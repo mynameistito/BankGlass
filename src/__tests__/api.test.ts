@@ -9,6 +9,7 @@ import {
 import { BankStore } from "@/bank-store";
 import { doBankStoreLive, isStoreStub } from "@/bank-store-do";
 import type { RuntimeConfig } from "@/config";
+import type { BankConnection } from "@/domain/connection";
 import {
   ConnectionIdSchema,
   ProviderAccountIdSchema,
@@ -35,6 +36,10 @@ const connectionId = Schema.decodeUnknownSync(ConnectionIdSchema)(
   "connection_akahu_default"
 );
 const providerId = Schema.decodeUnknownSync(ProviderIdSchema)("akahu");
+const secondConnectionId = Schema.decodeUnknownSync(ConnectionIdSchema)(
+  "connection_simplefin_status"
+);
+const secondProviderId = Schema.decodeUnknownSync(ProviderIdSchema)("simplefin");
 const providerAccountId = Schema.decodeUnknownSync(ProviderAccountIdSchema)(
   "test"
 );
@@ -45,6 +50,11 @@ const resetStore = async () => {
   }
   await stub.command({ args: [], name: "reset" });
 };
+
+const getStore = () =>
+  Effect.runPromise(
+    BankStore.pipe(Effect.provide(doBankStoreLive(env.BANK_STORE)))
+  );
 
 const requestApi = (request: Request) =>
   Effect.runPromise(
@@ -116,10 +126,39 @@ describe("Cloudflare HTTP boundary", () => {
     });
   });
 
-  it("reads account data from the Durable Object rather than the provider", async () => {
-    const store = await Effect.runPromise(
-      BankStore.pipe(Effect.provide(doBankStoreLive(env.BANK_STORE)))
+  it("returns a stable status array for multiple connections", async () => {
+    const store = await getStore();
+    const secondConnection: BankConnection = {
+      authorization: { _tag: "Connected" },
+      createdAt: "2026-08-26T00:00:00.000Z",
+      enabled: true,
+      id: secondConnectionId,
+      label: "SimpleFIN status",
+      lastSyncAt: null,
+      metadata: {},
+      providerId: secondProviderId,
+      updatedAt: "2026-08-26T00:00:00.000Z",
+    };
+    await Effect.runPromise(store.saveConnection(secondConnection));
+
+    const response = await requestApi(
+      new Request("https://example.test/v1/status", { headers })
     );
+    const body = (await response.json()) as {
+      data: Array<{ connectionId: string; providerId: string }>;
+    };
+
+    expect({ responseStatus: response.status, statuses: body.data }).toMatchObject({
+      responseStatus: 200,
+      statuses: [
+        { connectionId, providerId },
+        { connectionId: secondConnectionId, providerId: secondProviderId },
+      ],
+    });
+  });
+
+  it("reads account data from the Durable Object rather than the provider", async () => {
+    const store = await getStore();
     const time = "2026-08-26T00:00:00.000Z";
     await Effect.runPromise(
       store.acquireSync(connectionId, time, "api-test", null)
