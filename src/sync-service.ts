@@ -77,7 +77,7 @@ const failWithCooldownWhenApplicable = (
   acquisitionError: SyncAcquisitionError
 ): Effect.Effect<never, SyncCooldownFailure> =>
   Effect.gen(function* checkRefreshCooldown() {
-    if (refresh === null) {
+    if (refresh === null || acquisitionError._tag !== "SyncInProgressError") {
       return yield* Effect.fail(acquisitionError);
     }
     const status = yield* store.getSyncStatus(connection.id);
