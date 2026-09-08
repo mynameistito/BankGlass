@@ -3,15 +3,10 @@ import { Schema } from "effect";
 import {
   AccountIdSchema,
   ConnectionIdSchema,
+  IsoDateTimeSchema,
   ProviderAccountIdSchema,
   ProviderIdSchema,
 } from "@/domain/identifiers";
-
-const IsoDateTimeSchema = Schema.String.pipe(
-  Schema.check(
-    Schema.makeFilter((value: string) => !Number.isNaN(Date.parse(value)))
-  )
-);
 
 const ProviderAccountFields = {
   availableBalance: Schema.NullOr(Schema.Number),
