@@ -1,5 +1,7 @@
 import { Schema } from "effect";
 
+import { NonEmptyStringSchema } from "@/domain/identifiers";
+
 const DateTime = Schema.String.pipe(
   Schema.check(
     Schema.makeFilter((value: string) => !Number.isNaN(Date.parse(value)))
@@ -18,7 +20,7 @@ const Meta = Schema.optional(
 );
 
 const AkahuAccount = Schema.Struct({
-  _id: Schema.String,
+  _id: NonEmptyStringSchema,
   balance: Schema.optional(
     Schema.Struct({
       available: NullableNumber,
@@ -26,7 +28,10 @@ const AkahuAccount = Schema.Struct({
       current: Schema.Number,
     })
   ),
-  connection: Schema.Struct({ name: Schema.String }),
+  connection: Schema.Struct({
+    _id: NonEmptyStringSchema,
+    name: Schema.String,
+  }),
   formatted_account: NullableString,
   meta: Schema.optional(Schema.Struct({ holder: NullableString })),
   name: Schema.String,
@@ -41,8 +46,8 @@ const AkahuAccount = Schema.Struct({
 });
 
 const AkahuTransaction = Schema.Struct({
-  _account: Schema.String,
-  _id: Schema.String,
+  _account: NonEmptyStringSchema,
+  _id: NonEmptyStringSchema,
   amount: Schema.Number,
   balance: NullableNumber,
   category: Schema.optional(Schema.Struct({ name: Schema.String })),
@@ -56,7 +61,7 @@ const AkahuTransaction = Schema.Struct({
 });
 
 const AkahuPendingTransaction = Schema.Struct({
-  _account: Schema.String,
+  _account: NonEmptyStringSchema,
   amount: Schema.Number,
   date: DateTime,
   description: Schema.String,
