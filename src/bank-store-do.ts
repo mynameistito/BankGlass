@@ -10,6 +10,7 @@ import type { BankConnection } from "@/domain/connection";
 import {
   AccountIdSchema,
   ConnectionIdSchema,
+  IsoDateTimeSchema,
   ProviderIdSchema,
 } from "@/domain/identifiers";
 import { SyncStatusSchema } from "@/domain/sync";
@@ -62,11 +63,11 @@ const TransactionQuerySchema = Schema.Struct({
   accountId: Schema.NullOr(AccountIdSchema),
   connectionId: Schema.NullOr(ConnectionIdSchema),
   cursor: Schema.NullOr(Schema.String),
-  from: Schema.NullOr(Schema.String),
+  from: Schema.NullOr(IsoDateTimeSchema),
   limit: Schema.Number,
   providerId: Schema.NullOr(ProviderIdSchema),
   status: Schema.NullOr(Schema.Literals(["posted", "pending"])),
-  to: Schema.NullOr(Schema.String),
+  to: Schema.NullOr(IsoDateTimeSchema),
 });
 const ProviderSnapshotSchema = Schema.Struct({
   accounts: Schema.Array(ProviderAccountSchema),
@@ -75,8 +76,8 @@ const ProviderSnapshotSchema = Schema.Struct({
   pending: Schema.Array(ProviderPendingTransactionSchema),
   posted: Schema.Array(ProviderPostedTransactionSchema),
   providerId: ProviderIdSchema,
-  reconcilePostedFrom: Schema.String,
-  syncedAt: Schema.String,
+  reconcilePostedFrom: IsoDateTimeSchema,
+  syncedAt: IsoDateTimeSchema,
 });
 const TransactionPageSchema = Schema.Struct({
   items: Schema.Array(TransactionRecordSchema),
@@ -131,7 +132,7 @@ const currentSchemaStatements = [
     transaction_at TEXT NOT NULL,
     description TEXT NOT NULL,
     amount REAL NOT NULL,
-    currency TEXT NOT NULL,
+    currency TEXT,
     type TEXT NOT NULL,
     balance REAL,
     merchant_name TEXT,
@@ -350,12 +351,22 @@ const rowSync = (row: SqlRow): SyncStatus =>
   Schema.decodeUnknownSync(SyncStatusSchema)(row);
 
 const saveConnectionRow = (sql: SqlStorage, connection: BankConnection) => {
+  const [existing] = sql
+    .exec<{ providerId: string }>(
+      "SELECT provider_id AS providerId FROM connections WHERE id=?",
+      connection.id
+    )
+    .toArray();
+  if (existing !== undefined && existing.providerId !== connection.providerId) {
+    throw new Error("Connection provider cannot be changed in place");
+  }
+
   sql.exec(
     `INSERT INTO connections(
       id,provider_id,enabled,label,authorization_json,metadata_json,created_at,updated_at,last_sync_at
     ) VALUES(?,?,?,?,?,?,?,?,?)
     ON CONFLICT(id) DO UPDATE SET
-      provider_id=excluded.provider_id,enabled=excluded.enabled,label=excluded.label,
+      enabled=excluded.enabled,label=excluded.label,
       authorization_json=excluded.authorization_json,metadata_json=excluded.metadata_json,
       updated_at=excluded.updated_at`,
     connection.id,
@@ -370,7 +381,7 @@ const saveConnectionRow = (sql: SqlStorage, connection: BankConnection) => {
   );
   sql.exec(
     `INSERT INTO sync_state(connection_id,provider_id,status) VALUES(?,?,'idle')
-     ON CONFLICT(connection_id) DO UPDATE SET provider_id=excluded.provider_id`,
+     ON CONFLICT(connection_id) DO NOTHING`,
     connection.id,
     connection.providerId
   );
@@ -449,12 +460,14 @@ const saveSnapshotRows = (sql: SqlStorage, snapshot: ProviderSnapshot) => {
     return { error: "sync", ok: false } as const;
   }
 
+  const accountIds = new Map<string, string>();
   for (const account of snapshot.accounts) {
     const id = localAccountId(
       sql,
       snapshot.connectionId,
       account.providerAccountId
     );
+    accountIds.set(account.providerAccountId, id);
     sql.exec(
       `INSERT INTO accounts(
         id,connection_id,provider_id,provider_account_id,institution,name,type,status,currency,
@@ -499,11 +512,13 @@ const saveSnapshotRows = (sql: SqlStorage, snapshot: ProviderSnapshot) => {
       snapshot.connectionId,
       transaction.providerTransactionId
     );
-    const accountId = accountIdForProviderAccount(
-      sql,
-      snapshot.connectionId,
-      transaction.providerAccountId
-    );
+    const accountId =
+      accountIds.get(transaction.providerAccountId) ??
+      accountIdForProviderAccount(
+        sql,
+        snapshot.connectionId,
+        transaction.providerAccountId
+      );
     const posted = transaction.status === "posted" ? transaction : null;
     sql.exec(
       `INSERT INTO transactions(
@@ -733,9 +748,9 @@ const acquireSync: CommandHandler = (sql, args) => {
     Schema.decodeUnknownSync(
       Schema.Tuple([
         ConnectionIdSchema,
+        IsoDateTimeSchema,
         Schema.String,
-        Schema.String,
-        Schema.NullOr(Schema.String),
+        Schema.NullOr(IsoDateTimeSchema),
       ])
     )(args);
   const result = sql.exec(
@@ -767,7 +782,7 @@ const updateLease = (
 
 const markRefreshRequested: CommandHandler = (sql, args) => {
   const [connectionId, now, leaseId] = Schema.decodeUnknownSync(
-    Schema.Tuple([ConnectionIdSchema, Schema.String, Schema.String])
+    Schema.Tuple([ConnectionIdSchema, IsoDateTimeSchema, Schema.String])
   )(args);
   return updateLease(
     sql,
@@ -782,8 +797,8 @@ const completeSync: CommandHandler = (sql, args) => {
     Schema.decodeUnknownSync(
       Schema.Tuple([
         ConnectionIdSchema,
-        Schema.String,
-        Schema.NullOr(Schema.String),
+        IsoDateTimeSchema,
+        Schema.NullOr(IsoDateTimeSchema),
         Schema.String,
       ])
     )(args);
@@ -809,7 +824,7 @@ const failSync: CommandHandler = (sql, args) => {
   const [connectionId, now, code, leaseId] = Schema.decodeUnknownSync(
     Schema.Tuple([
       ConnectionIdSchema,
-      Schema.String,
+      IsoDateTimeSchema,
       Schema.String,
       Schema.String,
     ])
@@ -883,6 +898,13 @@ const commandHandlers = {
 const isCommandName = (name: string): name is keyof typeof commandHandlers =>
   name in commandHandlers;
 
+const transactionalCommands = new Set<keyof typeof commandHandlers>([
+  "deleteConnection",
+  "reset",
+  "saveConnection",
+  "saveSnapshot",
+]);
+
 /** Durable Object implementation of the SQLite-backed BankGlass store. */
 export class BankStoreDO extends DurableObject {
   /** Initialize and migrate the SQLite schema before accepting store commands. */
@@ -905,12 +927,14 @@ export class BankStoreDO extends DurableObject {
       }
       const handler = commandHandlers[command.name];
       const execute = () => handler(this.ctx.storage.sql, command.args);
-      return ["deleteConnection", "saveConnection", "saveSnapshot"].includes(
-        command.name
-      )
+      return transactionalCommands.has(command.name)
         ? this.ctx.storage.transactionSync(execute)
         : execute();
     } catch (error) {
+      console.error("bank store command failed", {
+        cause: String(error),
+        command: input.name,
+      });
       const databaseError = new DatabaseError({
         cause: error,
         operation: "command",
