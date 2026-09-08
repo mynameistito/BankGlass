@@ -64,8 +64,11 @@ const upstreamConnectionId = (connection: BankConnection) =>
 const resolveUpstreamConnectionId = (connection: BankConnection) =>
   Effect.gen(function* resolveConnectionScope() {
     const connectionId = upstreamConnectionId(connection);
-    if (connectionId !== null || connection.id === AkahuDefaultConnectionId) {
+    if (connectionId !== null && connectionId.trim().length > 0) {
       return connectionId;
+    }
+    if (connection.id === AkahuDefaultConnectionId) {
+      return null;
     }
     return yield* Effect.fail(
       new InvalidProviderResponseError({
