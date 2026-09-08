@@ -256,26 +256,11 @@ const createServer = (store: BankStoreService) => {
     "get_sync_status",
     {
       annotations: readOnlyAnnotations,
-      description:
-        "Get synchronization state and provider freshness for the primary connection",
+      description: "Get synchronization state and provider freshness for all connections",
       inputSchema: z.object({}),
-      outputSchema: syncStatusOutputSchema,
+      outputSchema: z.array(syncStatusOutputSchema),
     },
-    () =>
-      runTool(
-        store.listSyncStatuses.pipe(
-          Effect.flatMap((statuses) => {
-            const [status] = statuses;
-            return status === undefined
-              ? Effect.fail(
-                  new InvalidRequestError({
-                    message: "No connection is configured",
-                  })
-                )
-              : Effect.succeed(status);
-          })
-        )
-      )
+    () => runTool(store.listSyncStatuses)
   );
 
   return server;
