@@ -1,6 +1,7 @@
 import { Clock, Duration, Effect, Redacted, Schedule, Schema } from "effect";
 
 import type { ProviderAccount } from "@/domain/account";
+import type { BankConnection } from "@/domain/connection";
 import {
   ProviderAccountIdSchema,
   ProviderIdSchema,
@@ -40,15 +41,22 @@ export interface AkahuConfig {
   readonly baseUrl: string;
   /** Personal App ID token. */
   readonly appToken: Redacted.Redacted<string>;
-  /** User access token for the Personal App. */
-  readonly userToken: Redacted.Redacted<string>;
+  /** Explicit-refresh cooldown in seconds; defaults to one hour. */
+  readonly refreshCooldownSeconds?: number;
   /** Per-request timeout; defaults to ten seconds. */
   readonly requestTimeoutMs?: number;
+  /** User access token for the Personal App. */
+  readonly userToken: Redacted.Redacted<string>;
 }
 
 const nowIso = Clock.currentTimeMillis.pipe(
   Effect.map((millis) => new Date(millis).toISOString())
 );
+
+const canonicalIso = (value: string) => new Date(value).toISOString();
+
+const upstreamConnectionId = (connection: BankConnection) =>
+  connection.metadata["akahuConnectionId"] ?? null;
 
 const normalizeAccounts = (
   response: typeof AccountsResponse.Type,
@@ -66,8 +74,14 @@ const normalizeAccounts = (
     providerAccountId: Schema.decodeUnknownSync(ProviderAccountIdSchema)(
       item._id
     ),
-    providerBalanceRefreshedAt: item.refreshed?.balance ?? null,
-    providerTransactionsRefreshedAt: item.refreshed?.transactions ?? null,
+    providerBalanceRefreshedAt:
+      item.refreshed?.balance === undefined
+        ? null
+        : canonicalIso(item.refreshed.balance),
+    providerTransactionsRefreshedAt:
+      item.refreshed?.transactions === undefined
+        ? null
+        : canonicalIso(item.refreshed.transactions),
     status: item.status === "ACTIVE" ? "active" : "inactive",
     type: item.type.toLowerCase(),
   }));
@@ -83,6 +97,12 @@ const pendingId = (item: (typeof PendingResponse.Type)["items"][number]) =>
           item.description,
           item.amount,
           item.type,
+          item.updated_at,
+          item.meta?.card_suffix ?? "",
+          item.meta?.code ?? "",
+          item.meta?.other_account ?? "",
+          item.meta?.particulars ?? "",
+          item.meta?.reference ?? "",
         ].join("\u001F")
       )
     )
@@ -97,6 +117,20 @@ const pendingId = (item: (typeof PendingResponse.Type)["items"][number]) =>
     )
   );
 
+const parseRetryAfter = (raw: string | null): number | null => {
+  if (raw === null) {
+    return null;
+  }
+  if (/^\d+$/u.test(raw)) {
+    return Number(raw);
+  }
+  const target = Date.parse(raw);
+  if (Number.isNaN(target)) {
+    return null;
+  }
+  return Math.max(0, Math.ceil((target - Date.now()) / 1000));
+};
+
 const parseResponseJson = <A>(
   operation: string,
   response: Response,
@@ -110,10 +144,9 @@ const parseResponseJson = <A>(
     );
   }
   if (response.status === 429) {
-    const raw = response.headers.get("Retry-After");
     return Effect.fail(
       new ProviderRateLimitError({
-        retryAfterSeconds: raw === null ? null : Math.trunc(Number(raw)),
+        retryAfterSeconds: parseRetryAfter(response.headers.get("Retry-After")),
       })
     );
   }
@@ -164,10 +197,10 @@ const normalizePendingTransaction = (
       particulars: item.meta?.particulars ?? null,
       providerAccountId,
       providerTransactionId,
-      providerUpdatedAt: item.updated_at,
+      providerUpdatedAt: canonicalIso(item.updated_at),
       reference: item.meta?.reference ?? null,
       status: "pending",
-      transactionAt: item.date,
+      transactionAt: canonicalIso(item.date),
       type: item.type,
     } satisfies ProviderPendingTransaction;
   });
@@ -232,19 +265,31 @@ export const makeAkahuProvider = (
         );
   };
 
-  const readAccounts = Effect.gen(function* readAccounts() {
-    const now = yield* nowIso;
-    const response = yield* request(
-      "getAccounts",
-      "/accounts",
-      AccountsResponse
-    );
-    return normalizeAccounts(response, now);
-  });
+  const readAccounts = (connection: BankConnection) =>
+    Effect.gen(function* readAccounts() {
+      const now = yield* nowIso;
+      const response = yield* request(
+        "getAccounts",
+        "/accounts",
+        AccountsResponse
+      );
+      const connectionId = upstreamConnectionId(connection);
+      const scopedResponse =
+        connectionId === null
+          ? response
+          : {
+              ...response,
+              items: response.items.filter(
+                (item) => item.connection._id === connectionId
+              ),
+            };
+      return normalizeAccounts(scopedResponse, now);
+    });
 
   const readPosted = (
     start: string | null,
-    currencyByAccount: ReadonlyMap<string, string | null>
+    currencyByAccount: ReadonlyMap<string, string | null>,
+    allowedAccountIds: ReadonlySet<string>
   ) =>
     Effect.gen(function* readPostedTransactions() {
       const items: ProviderPostedTransaction[] = [];
@@ -273,8 +318,11 @@ export const makeAkahuProvider = (
           `/transactions?${query.toString()}`,
           TransactionsResponse
         );
+        const scopedItems = response.items.filter((item) =>
+          allowedAccountIds.has(item._account)
+        );
         const now = yield* nowIso;
-        if (items.length + response.items.length > maxPostedTransactions) {
+        if (items.length + scopedItems.length > maxPostedTransactions) {
           return yield* Effect.fail(
             new InvalidProviderResponseError({
               details: `Response exceeded ${maxPostedTransactions} transactions`,
@@ -283,7 +331,7 @@ export const makeAkahuProvider = (
           );
         }
         items.push(
-          ...response.items.map((item): ProviderPostedTransaction => {
+          ...scopedItems.map((item): ProviderPostedTransaction => {
             const providerAccountId = Schema.decodeUnknownSync(
               ProviderAccountIdSchema
             )(item._account);
@@ -300,14 +348,14 @@ export const makeAkahuProvider = (
               otherAccount: item.meta?.other_account ?? null,
               particulars: item.meta?.particulars ?? null,
               providerAccountId,
-              providerCreatedAt: item.created_at,
+              providerCreatedAt: canonicalIso(item.created_at),
               providerTransactionId: Schema.decodeUnknownSync(
                 ProviderTransactionIdSchema
               )(item._id),
-              providerUpdatedAt: item.updated_at,
+              providerUpdatedAt: canonicalIso(item.updated_at),
               reference: item.meta?.reference ?? null,
               status: "posted",
-              transactionAt: item.date,
+              transactionAt: canonicalIso(item.date),
               type: item.type,
             };
           })
@@ -329,7 +377,10 @@ export const makeAkahuProvider = (
       return items;
     });
 
-  const readPending = (currencyByAccount: ReadonlyMap<string, string | null>) =>
+  const readPending = (
+    currencyByAccount: ReadonlyMap<string, string | null>,
+    allowedAccountIds: ReadonlySet<string>
+  ) =>
     Effect.gen(function* readPendingTransactions() {
       const response = yield* request(
         "getPendingTransactions",
@@ -337,35 +388,38 @@ export const makeAkahuProvider = (
         PendingResponse
       );
       return yield* Effect.all(
-        response.items.map((item) =>
-          normalizePendingTransaction(item, currencyByAccount)
-        )
+        response.items
+          .filter((item) => allowedAccountIds.has(item._account))
+          .map((item) => normalizePendingTransaction(item, currencyByAccount))
       );
     });
 
-  const requestRefresh = request(
-    "requestRefresh",
-    "/refresh",
-    RefreshResponse,
-    { method: "POST" }
-  ).pipe(Effect.asVoid);
+  const refreshPath = (connection: BankConnection) => {
+    const connectionId = upstreamConnectionId(connection);
+    return connectionId === null
+      ? "/refresh"
+      : `/refresh/${encodeURIComponent(connectionId)}`;
+  };
 
   return {
     displayName: "Akahu",
     id: AkahuProviderId,
     pendingTransactions: { _tag: "Available" },
-    readSnapshot: ({ start }) =>
+    readSnapshot: ({ connection, start }) =>
       Effect.gen(function* readSnapshot() {
-        const accounts = yield* readAccounts;
+        const accounts = yield* readAccounts(connection);
         const currencyByAccount = new Map(
           accounts.map(
             (account) => [account.providerAccountId, account.currency] as const
           )
         );
+        const allowedAccountIds = new Set(
+          accounts.map((account) => String(account.providerAccountId))
+        );
         const [posted, pending] = yield* Effect.all(
           [
-            readPosted(start, currencyByAccount),
-            readPending(currencyByAccount),
+            readPosted(start, currencyByAccount, allowedAccountIds),
+            readPending(currencyByAccount, allowedAccountIds),
           ],
           { concurrency: 2 }
         );
@@ -373,9 +427,12 @@ export const makeAkahuProvider = (
       }),
     refresh: {
       _tag: "Explicit",
-      minimumInterval: Duration.seconds(3600),
+      minimumInterval: Duration.seconds(config.refreshCooldownSeconds ?? 3600),
       propagationDelay: Duration.seconds(5),
-      request: () => requestRefresh,
+      request: (connection) =>
+        request("requestRefresh", refreshPath(connection), RefreshResponse, {
+          method: "POST",
+        }).pipe(Effect.asVoid),
     },
   };
 };
