@@ -165,7 +165,7 @@ describe("Akahu provider boundary", () => {
     const nowMillis = Date.parse(now);
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(nowMillis);
     try {
-      const rateLimit = async (retryAfter: string) => {
+      const rateLimit = (retryAfter: string) => {
         const provider = makeProvider(() =>
           Promise.resolve(
             new Response(null, {
