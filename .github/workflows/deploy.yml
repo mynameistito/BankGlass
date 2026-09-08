@@ -21,6 +21,32 @@ jobs:
       deployments: write
       pull-requests: write
     steps:
+      - name: Validate production credentials
+        if: >-
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_branch == 'main'
+        shell: bash
+        env:
+          ACCESS_POLICY_AUD: ${{ secrets.ACCESS_POLICY_AUD }}
+          AKAHU_APP_TOKEN: ${{ secrets.AKAHU_APP_TOKEN }}
+          AKAHU_USER_TOKEN: ${{ secrets.AKAHU_USER_TOKEN }}
+          API_BEARER_TOKEN: ${{ secrets.API_BEARER_TOKEN }}
+        run: |
+          test -n "$ACCESS_POLICY_AUD"
+          test -n "$AKAHU_APP_TOKEN"
+          test -n "$AKAHU_USER_TOKEN"
+          test -n "$API_BEARER_TOKEN"
+
+      - name: Validate preview Access audience
+        if: >-
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.event == 'pull_request'
+        shell: bash
+        env:
+          PREVIEW_ACCESS_POLICY_AUD: ${{ vars.PREVIEW_ACCESS_POLICY_AUD }}
+        run: test -n "$PREVIEW_ACCESS_POLICY_AUD"
+
       - name: Run Alchemy deployment
         # The trusted action keeps exact-SHA/fork policy centralized. Preview code
         # receives inert application credentials; only a successful main push gets
@@ -30,7 +56,7 @@ jobs:
           AKAHU_APP_TOKEN: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && secrets.AKAHU_APP_TOKEN || 'preview-provider-disabled' }}
           AKAHU_USER_TOKEN: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && secrets.AKAHU_USER_TOKEN || 'preview-provider-disabled' }}
           API_BEARER_TOKEN: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && secrets.API_BEARER_TOKEN || 'preview-api-token' }}
-          ACCESS_POLICY_AUD: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && secrets.ACCESS_POLICY_AUD || 'preview-access-audience' }}
+          ACCESS_POLICY_AUD: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && secrets.ACCESS_POLICY_AUD || vars.PREVIEW_ACCESS_POLICY_AUD }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
