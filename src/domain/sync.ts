@@ -1,12 +1,10 @@
 import { Schema } from "effect";
 
-import { ConnectionIdSchema, ProviderIdSchema } from "@/domain/identifiers";
-
-const IsoDateTimeSchema = Schema.String.pipe(
-  Schema.check(
-    Schema.makeFilter((value: string) => !Number.isNaN(Date.parse(value)))
-  )
-);
+import {
+  ConnectionIdSchema,
+  IsoDateTimeSchema,
+  ProviderIdSchema,
+} from "@/domain/identifiers";
 
 /** Synchronization state for one provider connection. */
 export const SyncStatusSchema = Schema.Struct({
