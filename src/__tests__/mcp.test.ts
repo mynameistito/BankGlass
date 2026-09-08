@@ -6,6 +6,7 @@ import { z } from "zod";
 import { BankStore } from "@/bank-store";
 import { doBankStoreLive, isStoreStub } from "@/bank-store-do";
 import type { BankAccount, ProviderAccount } from "@/domain/account";
+import type { BankConnection } from "@/domain/connection";
 import {
   ConnectionIdSchema,
   ProviderAccountIdSchema,
@@ -25,6 +26,10 @@ const connectionId = Schema.decodeUnknownSync(ConnectionIdSchema)(
   "connection_akahu_default"
 );
 const providerId = Schema.decodeUnknownSync(ProviderIdSchema)("akahu");
+const secondConnectionId = Schema.decodeUnknownSync(ConnectionIdSchema)(
+  "connection_simplefin_status"
+);
+const secondProviderId = Schema.decodeUnknownSync(ProviderIdSchema)("simplefin");
 const providerAccountId = Schema.decodeUnknownSync(ProviderAccountIdSchema)(
   "account_test"
 );
@@ -319,9 +324,38 @@ describe("MCP protocol boundary", () => {
     expect(status.message).toMatchObject({
       result: {
         content: [{ text: expect.stringContaining('"status":"idle"') }],
-        structuredContent: { connectionId, providerId, status: "idle" },
+        structuredContent: {
+          result: [{ connectionId, providerId, status: "idle" }],
+        },
       },
     });
+  });
+
+  it("returns all connection statuses without inferring a primary connection", async () => {
+    const store = await getStore();
+    const secondConnection: BankConnection = {
+      authorization: { _tag: "Connected" },
+      createdAt: time,
+      enabled: true,
+      id: secondConnectionId,
+      label: "SimpleFIN status",
+      lastSyncAt: null,
+      metadata: {},
+      providerId: secondProviderId,
+      updatedAt: time,
+    };
+    await Effect.runPromise(store.saveConnection(secondConnection));
+
+    const status = await callTool(5, "get_sync_status");
+    const message = toolResponseSchema.parse(status.message);
+    const statuses = z
+      .array(z.object({ connectionId: z.string(), providerId: z.string() }))
+      .parse(JSON.parse(message.result.content[0]?.text ?? "[]"));
+
+    expect(statuses).toStrictEqual([
+      { connectionId, providerId },
+      { connectionId: secondConnectionId, providerId: secondProviderId },
+    ]);
   });
 
   it("paginates transaction results using the returned cursor", async () => {
