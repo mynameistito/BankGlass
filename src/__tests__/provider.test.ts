@@ -1,5 +1,5 @@
 import { Effect, Redacted, Schema } from "effect";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { BankConnection } from "@/domain/connection";
 import { ConnectionIdSchema } from "@/domain/identifiers";
@@ -17,6 +17,15 @@ const connection: BankConnection = {
   providerId: AkahuProviderId,
   updatedAt: now,
 };
+
+const scopedConnection = (
+  id: string,
+  akahuConnectionId: string
+): BankConnection => ({
+  ...connection,
+  id: Schema.decodeUnknownSync(ConnectionIdSchema)(id),
+  metadata: { akahuConnectionId },
+});
 
 const makeProvider = (
   fetchImplementation: typeof fetch,
@@ -57,7 +66,7 @@ describe("Akahu provider boundary", () => {
                   currency: "NZD",
                   current: 100.5,
                 },
-                connection: { name: "BNZ" },
+                connection: { _id: "conn_bnz", name: "BNZ" },
                 formatted_account: "02-0000-0000000-00",
                 meta: { holder: "Test Person" },
                 name: "Everyday",
@@ -104,6 +113,34 @@ describe("Akahu provider boundary", () => {
     expect(error._tag).toBe("InvalidProviderResponseError");
   });
 
+  it("rejects empty provider identifiers as a typed response error", async () => {
+    const provider = makeProvider((input) => {
+      const url = String(input);
+      return Promise.resolve(
+        url.endsWith("/accounts")
+          ? Response.json({
+              items: [
+                {
+                  _id: "",
+                  connection: { _id: "conn_bnz", name: "BNZ" },
+                  name: "Everyday",
+                  status: "ACTIVE",
+                  type: "CHECKING",
+                },
+              ],
+              success: true,
+            })
+          : Response.json({ items: [], success: true })
+      );
+    });
+
+    const error = await Effect.runPromise(
+      Effect.flip(provider.readSnapshot({ connection, start: null }))
+    );
+
+    expect(error._tag).toBe("InvalidProviderResponseError");
+  });
+
   it("models refresh rate limits without retrying them", async () => {
     let calls = 0;
     const provider = makeProvider(() => {
@@ -122,6 +159,39 @@ describe("Akahu provider boundary", () => {
       retryAfterSeconds: 30,
     });
     expect(calls).toBe(1);
+  });
+
+  it("parses HTTP-date Retry-After values and rejects malformed values", async () => {
+    const nowMillis = Date.parse(now);
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(nowMillis);
+    try {
+      const rateLimit = async (retryAfter: string) => {
+        const provider = makeProvider(() =>
+          Promise.resolve(
+            new Response(null, {
+              headers: { "Retry-After": retryAfter },
+              status: 429,
+            })
+          )
+        );
+        return Effect.runPromise(
+          Effect.flip(explicitRefresh(provider).request(connection))
+        );
+      };
+      const future = await rateLimit(
+        new Date(nowMillis + 30_000).toUTCString()
+      );
+      const past = await rateLimit(new Date(nowMillis - 30_000).toUTCString());
+      const invalid = await rateLimit("not-a-date");
+
+      expect({ future, invalid, past }).toMatchObject({
+        future: { retryAfterSeconds: 30 },
+        invalid: { retryAfterSeconds: null },
+        past: { retryAfterSeconds: 0 },
+      });
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
   it("retries transient read failures but not successful follow-up reads", async () => {
@@ -219,5 +289,127 @@ describe("Akahu provider boundary", () => {
 
     expect(error._tag).toBe("InvalidProviderResponseError");
     expect(transactionCalls).toBe(2);
+  });
+
+  it("scopes reads and refreshes to the configured Akahu connection", async () => {
+    const requestedUrls: string[] = [];
+    const connectionA = scopedConnection("connection_a", "conn_a");
+    const provider = makeProvider((input, init) => {
+      const url = String(input);
+      requestedUrls.push(`${init?.method ?? "GET"} ${url}`);
+      if (url.endsWith("/accounts")) {
+        return Promise.resolve(
+          Response.json({
+            items: [
+              {
+                _id: "acc_a",
+                connection: { _id: "conn_a", name: "Bank A" },
+                name: "A",
+                status: "ACTIVE",
+                type: "CHECKING",
+              },
+              {
+                _id: "acc_b",
+                connection: { _id: "conn_b", name: "Bank B" },
+                name: "B",
+                status: "ACTIVE",
+                type: "CHECKING",
+              },
+            ],
+            success: true,
+          })
+        );
+      }
+      if (url.includes("/transactions/pending")) {
+        return Promise.resolve(
+          Response.json({
+            items: [
+              {
+                _account: "acc_a",
+                amount: -1,
+                date: now,
+                description: "A pending",
+                type: "CARD",
+                updated_at: now,
+              },
+              {
+                _account: "acc_b",
+                amount: -2,
+                date: now,
+                description: "B pending",
+                type: "CARD",
+                updated_at: now,
+              },
+            ],
+            success: true,
+          })
+        );
+      }
+      if (url.includes("/transactions?")) {
+        return Promise.resolve(
+          Response.json({
+            items: [
+              {
+                _account: "acc_a",
+                _id: "tx_a",
+                amount: -1,
+                created_at: now,
+                date: now,
+                description: "A posted",
+                type: "CARD",
+                updated_at: now,
+              },
+              {
+                _account: "acc_b",
+                _id: "tx_b",
+                amount: -2,
+                created_at: now,
+                date: now,
+                description: "B posted",
+                type: "CARD",
+                updated_at: now,
+              },
+            ],
+            success: true,
+          })
+        );
+      }
+      if (url.endsWith("/refresh/conn_a")) {
+        return Promise.resolve(Response.json({ success: true }));
+      }
+      return Promise.resolve(new Response(null, { status: 404 }));
+    });
+
+    const snapshot = await Effect.runPromise(
+      provider.readSnapshot({ connection: connectionA, start: null })
+    );
+    await Effect.runPromise(explicitRefresh(provider).request(connectionA));
+
+    expect({
+      accounts: snapshot.accounts.map((account) => account.providerAccountId),
+      pending: snapshot.pending.map((item) => item.providerAccountId),
+      posted: snapshot.posted.map((item) => item.providerAccountId),
+      targetedRefresh: requestedUrls.includes(
+        "POST https://api.example.test/refresh/conn_a"
+      ),
+    }).toStrictEqual({
+      accounts: ["acc_a"],
+      pending: ["acc_a"],
+      posted: ["acc_a"],
+      targetedRefresh: true,
+    });
+  });
+
+  it("uses the configured refresh cooldown", () => {
+    const provider = makeAkahuProvider({
+      appToken: Redacted.make("app"),
+      baseUrl: "https://api.example.test",
+      refreshCooldownSeconds: 123,
+      userToken: Redacted.make("user"),
+    });
+
+    expect(explicitRefresh(provider).minimumInterval).toStrictEqual(
+      Effect.runSync(Effect.succeed(explicitRefresh(provider).minimumInterval))
+    );
   });
 });
