@@ -6,7 +6,6 @@ on:
       - refactor/provider-connection-foundation
 
 permissions:
-  actions: write
   contents: write
 
 jobs:
@@ -30,11 +29,13 @@ jobs:
       - name: Apply Ultracite fixes
         run: bun run fix
 
-      - name: Commit formatter output
+      - name: Commit non-workflow formatter output
         shell: bash
         run: |
-          if git diff --quiet; then
-            exit 0
+          cp .github/workflows/deploy.yml .formatted-deploy.yml
+          git restore .github/workflows/deploy.yml .github/workflows/format-provider-foundation.yml
+          if git diff --quiet && git status --porcelain --untracked-files=all | grep -q '^?? .formatted-deploy.yml$'; then
+            :
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
