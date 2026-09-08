@@ -6,6 +6,7 @@ on:
       - refactor/provider-connection-foundation
 
 permissions:
+  actions: write
   contents: write
 
 jobs:
