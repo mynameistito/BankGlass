@@ -18,10 +18,7 @@ const successfulConnectionId = Schema.decodeUnknownSync(ConnectionIdSchema)(
 );
 const providerId = Schema.decodeUnknownSync(ProviderIdSchema)("scheduled");
 
-const failure = (
-  errorTag: string,
-  id = connectionId
-) => ({
+const failure = (errorTag: string, id = connectionId) => ({
   _tag: "Failure" as const,
   connectionId: id,
   errorTag,

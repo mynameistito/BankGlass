@@ -170,7 +170,10 @@ describe("Durable Object banking persistence", () => {
       store.listTransactions(transactionQuery("posted"))
     );
     const firstAccount = firstOrThrow(firstAccounts, "Expected first account");
-    const secondAccount = firstOrThrow(secondAccounts, "Expected second account");
+    const secondAccount = firstOrThrow(
+      secondAccounts,
+      "Expected second account"
+    );
     const firstTransaction = firstOrThrow(
       firstTransactions.items,
       "Expected first transaction"
@@ -409,12 +412,13 @@ describe("Durable Object banking persistence", () => {
       store.getConnection(simplefinConnectionId)
     );
 
-    expect({ errorTag: error._tag, providerId: persisted.providerId }).toStrictEqual(
-      {
-        errorTag: "DatabaseError",
-        providerId: simplefinProviderId,
-      }
-    );
+    expect({
+      errorTag: error._tag,
+      providerId: persisted.providerId,
+    }).toStrictEqual({
+      errorTag: "DatabaseError",
+      providerId: simplefinProviderId,
+    });
   });
 
   it("persists provider transactions without a currency", async () => {

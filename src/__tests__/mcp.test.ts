@@ -29,7 +29,8 @@ const providerId = Schema.decodeUnknownSync(ProviderIdSchema)("akahu");
 const secondConnectionId = Schema.decodeUnknownSync(ConnectionIdSchema)(
   "connection_simplefin_status"
 );
-const secondProviderId = Schema.decodeUnknownSync(ProviderIdSchema)("simplefin");
+const secondProviderId =
+  Schema.decodeUnknownSync(ProviderIdSchema)("simplefin");
 const providerAccountId = Schema.decodeUnknownSync(ProviderAccountIdSchema)(
   "account_test"
 );

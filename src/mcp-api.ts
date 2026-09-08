@@ -256,7 +256,8 @@ const createServer = (store: BankStoreService) => {
     "get_sync_status",
     {
       annotations: readOnlyAnnotations,
-      description: "Get synchronization state and provider freshness for all connections",
+      description:
+        "Get synchronization state and provider freshness for all connections",
       inputSchema: z.object({}),
       outputSchema: z.array(syncStatusOutputSchema),
     },

@@ -39,7 +39,8 @@ const providerId = Schema.decodeUnknownSync(ProviderIdSchema)("akahu");
 const secondConnectionId = Schema.decodeUnknownSync(ConnectionIdSchema)(
   "connection_simplefin_status"
 );
-const secondProviderId = Schema.decodeUnknownSync(ProviderIdSchema)("simplefin");
+const secondProviderId =
+  Schema.decodeUnknownSync(ProviderIdSchema)("simplefin");
 const providerAccountId = Schema.decodeUnknownSync(ProviderAccountIdSchema)(
   "test"
 );
@@ -146,7 +147,7 @@ describe("Cloudflare HTTP boundary", () => {
     );
     const body = await response.json();
 
-    expect({ responseStatus: response.status, body }).toMatchObject({
+    expect({ body, responseStatus: response.status }).toMatchObject({
       body: {
         data: [
           { connectionId, providerId },
