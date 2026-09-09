@@ -269,7 +269,20 @@ describe("Akahu provider boundary", () => {
     const provider = makeProvider((input) => {
       const url = String(input);
       if (url.endsWith("/accounts")) {
-        return Promise.resolve(Response.json({ items: [], success: true }));
+        return Promise.resolve(
+          Response.json({
+            items: [
+              {
+                _id: "acc_a",
+                connection: { _id: "conn_a", name: "Bank A" },
+                name: "A",
+                status: "ACTIVE",
+                type: "CHECKING",
+              },
+            ],
+            success: true,
+          })
+        );
       }
       if (url.includes("/transactions/pending")) {
         return Promise.resolve(Response.json({ items: [], success: true }));
@@ -390,6 +403,12 @@ describe("Akahu provider boundary", () => {
       accounts: snapshot.accounts.map((account) => account.providerAccountId),
       pending: snapshot.pending.map((item) => item.providerAccountId),
       posted: snapshot.posted.map((item) => item.providerAccountId),
+      targetedPending: requestedUrls.includes(
+        "GET https://api.example.test/accounts/acc_a/transactions/pending"
+      ),
+      targetedPosted: requestedUrls.includes(
+        "GET https://api.example.test/accounts/acc_a/transactions?"
+      ),
       targetedRefresh: requestedUrls.includes(
         "POST https://api.example.test/refresh/conn_a"
       ),
@@ -397,6 +416,8 @@ describe("Akahu provider boundary", () => {
       accounts: ["acc_a"],
       pending: ["acc_a"],
       posted: ["acc_a"],
+      targetedPending: true,
+      targetedPosted: true,
       targetedRefresh: true,
     });
   });
@@ -426,7 +447,7 @@ describe("Akahu provider boundary", () => {
     });
   });
 
-  it("bounds raw posted transaction work before connection filtering", async () => {
+  it("applies the raw posted transaction bound after connection filtering", async () => {
     const connectionA = scopedConnection("connection_a", "conn_a");
     const provider = makeProvider((input) => {
       const url = String(input);
@@ -465,12 +486,10 @@ describe("Akahu provider boundary", () => {
         })
       );
     });
-    const error = await Effect.runPromise(
-      Effect.flip(
-        provider.readSnapshot({ connection: connectionA, start: null })
-      )
+    const snapshot = await Effect.runPromise(
+      provider.readSnapshot({ connection: connectionA, start: null })
     );
-    expect(error._tag).toBe("InvalidProviderResponseError");
+    expect(snapshot.posted).toStrictEqual([]);
   });
 
   it("bounds scoped pending transaction normalization", async () => {

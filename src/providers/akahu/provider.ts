@@ -65,7 +65,7 @@ const resolveUpstreamConnectionId = (connection: BankConnection) =>
   Effect.gen(function* resolveConnectionScope() {
     const connectionId = upstreamConnectionId(connection);
     if (connectionId !== null && connectionId.trim().length > 0) {
-      return connectionId;
+      return connectionId.trim();
     }
     if (connection.id === AkahuDefaultConnectionId) {
       return null;
@@ -225,6 +225,39 @@ const normalizePendingTransaction = (
     } satisfies ProviderPendingTransaction;
   });
 
+const normalizePostedTransaction = (
+  item: (typeof TransactionsResponse.Type)["items"][number],
+  currencyByAccount: ReadonlyMap<string, string | null>,
+  now: string
+): ProviderPostedTransaction => {
+  const providerAccountId = Schema.decodeUnknownSync(ProviderAccountIdSchema)(
+    item._account
+  );
+  return {
+    amount: item.amount,
+    balance: item.balance ?? null,
+    cardSuffix: item.meta?.card_suffix ?? null,
+    categoryName: item.category?.name ?? null,
+    code: item.meta?.code ?? null,
+    currency: currencyByAccount.get(providerAccountId) ?? null,
+    dataUpdatedAt: now,
+    description: item.description,
+    merchantName: item.merchant?.name ?? null,
+    otherAccount: item.meta?.other_account ?? null,
+    particulars: item.meta?.particulars ?? null,
+    providerAccountId,
+    providerCreatedAt: canonicalIso(item.created_at),
+    providerTransactionId: Schema.decodeUnknownSync(
+      ProviderTransactionIdSchema
+    )(item._id),
+    providerUpdatedAt: canonicalIso(item.updated_at),
+    reference: item.meta?.reference ?? null,
+    status: "posted",
+    transactionAt: canonicalIso(item.date),
+    type: item.type,
+  };
+};
+
 /**
  * Construct the bundled Akahu provider adapter.
  *
@@ -303,18 +336,28 @@ export const makeAkahuProvider = (
                 (item) => item.connection._id === connectionId
               ),
             };
+      if (connectionId !== null && scopedResponse.items.length === 0) {
+        return yield* Effect.fail(
+          new InvalidProviderResponseError({
+            details: `No accounts found for Akahu connection ${connectionId}`,
+            operation: "getAccounts",
+          })
+        );
+      }
       return normalizeAccounts(scopedResponse, now);
     });
 
-  const readPosted = (
+  const readPostedAccount = (
+    accountId: string,
     start: string | null,
-    currencyByAccount: ReadonlyMap<string, string | null>,
-    allowedAccountIds: ReadonlySet<string>
+    allowedAccountIds: ReadonlySet<string>,
+    rawItemOffset: number,
+    postedItemOffset: number
   ) =>
-    Effect.gen(function* readPostedTransactions() {
-      const items: ProviderPostedTransaction[] = [];
+    Effect.gen(function* readPostedAccountTransactions() {
+      const items: (typeof TransactionsResponse.Type)["items"][number][] = [];
       const seenCursors = new Set<string>();
-      let rawItems = 0;
+      let rawItems = rawItemOffset;
       let cursor: string | null = null;
       let page = 0;
       do {
@@ -336,10 +379,13 @@ export const makeAkahuProvider = (
         }
         const response = yield* request(
           "getTransactions",
-          `/transactions?${query.toString()}`,
+          `/accounts/${encodeURIComponent(accountId)}/transactions?${query.toString()}`,
           TransactionsResponse
         );
-        rawItems += response.items.length;
+        const scopedItems = response.items.filter((item) =>
+          allowedAccountIds.has(item._account)
+        );
+        rawItems += scopedItems.length;
         if (rawItems > maxRawTransactionItems) {
           return yield* Effect.fail(
             new InvalidProviderResponseError({
@@ -348,11 +394,10 @@ export const makeAkahuProvider = (
             })
           );
         }
-        const scopedItems = response.items.filter((item) =>
-          allowedAccountIds.has(item._account)
-        );
-        const now = yield* nowIso;
-        if (items.length + scopedItems.length > maxPostedTransactions) {
+        if (
+          postedItemOffset + items.length + scopedItems.length >
+          maxPostedTransactions
+        ) {
           return yield* Effect.fail(
             new InvalidProviderResponseError({
               details: `Response exceeded ${maxPostedTransactions} transactions`,
@@ -360,36 +405,7 @@ export const makeAkahuProvider = (
             })
           );
         }
-        items.push(
-          ...scopedItems.map((item): ProviderPostedTransaction => {
-            const providerAccountId = Schema.decodeUnknownSync(
-              ProviderAccountIdSchema
-            )(item._account);
-            return {
-              amount: item.amount,
-              balance: item.balance ?? null,
-              cardSuffix: item.meta?.card_suffix ?? null,
-              categoryName: item.category?.name ?? null,
-              code: item.meta?.code ?? null,
-              currency: currencyByAccount.get(providerAccountId) ?? null,
-              dataUpdatedAt: now,
-              description: item.description,
-              merchantName: item.merchant?.name ?? null,
-              otherAccount: item.meta?.other_account ?? null,
-              particulars: item.meta?.particulars ?? null,
-              providerAccountId,
-              providerCreatedAt: canonicalIso(item.created_at),
-              providerTransactionId: Schema.decodeUnknownSync(
-                ProviderTransactionIdSchema
-              )(item._id),
-              providerUpdatedAt: canonicalIso(item.updated_at),
-              reference: item.meta?.reference ?? null,
-              status: "posted",
-              transactionAt: canonicalIso(item.date),
-              type: item.type,
-            };
-          })
-        );
+        items.push(...scopedItems);
         const nextCursor = response.cursor?.next ?? null;
         if (nextCursor !== null && seenCursors.has(nextCursor)) {
           return yield* Effect.fail(
@@ -404,6 +420,34 @@ export const makeAkahuProvider = (
         }
         cursor = nextCursor;
       } while (cursor !== null);
+      return { items, rawItems };
+    });
+
+  const readPosted = (
+    start: string | null,
+    currencyByAccount: ReadonlyMap<string, string | null>,
+    allowedAccountIds: ReadonlySet<string>
+  ) =>
+    Effect.gen(function* readPostedTransactions() {
+      const items: ProviderPostedTransaction[] = [];
+      let rawItems = 0;
+      for (const accountId of allowedAccountIds) {
+        const { items: accountItems, rawItems: accountRawItems } =
+          yield* readPostedAccount(
+            accountId,
+            start,
+            allowedAccountIds,
+            rawItems,
+            items.length
+          );
+        rawItems = accountRawItems;
+        const now = yield* nowIso;
+        items.push(
+          ...accountItems.map((item) =>
+            normalizePostedTransaction(item, currencyByAccount, now)
+          )
+        );
+      }
       return items;
     });
 
@@ -412,35 +456,42 @@ export const makeAkahuProvider = (
     allowedAccountIds: ReadonlySet<string>
   ) =>
     Effect.gen(function* readPendingTransactions() {
-      const response = yield* request(
-        "getPendingTransactions",
-        "/transactions/pending",
-        PendingResponse
-      );
-      if (response.items.length > maxRawTransactionItems) {
-        return yield* Effect.fail(
-          new InvalidProviderResponseError({
-            details: `Response exceeded ${maxRawTransactionItems} raw pending transactions`,
-            operation: "getPendingTransactions",
-          })
+      const items: ProviderPendingTransaction[] = [];
+      let rawItems = 0;
+      for (const accountId of allowedAccountIds) {
+        const response = yield* request(
+          "getPendingTransactions",
+          `/accounts/${encodeURIComponent(accountId)}/transactions/pending`,
+          PendingResponse
         );
-      }
-      const scopedItems = response.items.filter((item) =>
-        allowedAccountIds.has(item._account)
-      );
-      if (scopedItems.length > maxPendingTransactions) {
-        return yield* Effect.fail(
-          new InvalidProviderResponseError({
-            details: `Response exceeded ${maxPendingTransactions} pending transactions`,
-            operation: "getPendingTransactions",
-          })
+        const scopedItems = response.items.filter((item) =>
+          allowedAccountIds.has(item._account)
         );
+        rawItems += scopedItems.length;
+        if (rawItems > maxRawTransactionItems) {
+          return yield* Effect.fail(
+            new InvalidProviderResponseError({
+              details: `Response exceeded ${maxRawTransactionItems} raw pending transactions`,
+              operation: "getPendingTransactions",
+            })
+          );
+        }
+        if (items.length + scopedItems.length > maxPendingTransactions) {
+          return yield* Effect.fail(
+            new InvalidProviderResponseError({
+              details: `Response exceeded ${maxPendingTransactions} pending transactions`,
+              operation: "getPendingTransactions",
+            })
+          );
+        }
+        const normalizedItems = yield* Effect.all(
+          scopedItems.map((item) =>
+            normalizePendingTransaction(item, currencyByAccount)
+          )
+        );
+        items.push(...normalizedItems);
       }
-      return yield* Effect.all(
-        scopedItems.map((item) =>
-          normalizePendingTransaction(item, currencyByAccount)
-        )
-      );
+      return items;
     });
 
   const refreshPath = (connection: BankConnection) =>
