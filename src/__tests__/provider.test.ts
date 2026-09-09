@@ -447,7 +447,7 @@ describe("Akahu provider boundary", () => {
     });
   });
 
-  it("applies the raw posted transaction bound after connection filtering", async () => {
+  it("drops out-of-scope posted transaction data before applying raw bounds", async () => {
     const connectionA = scopedConnection("connection_a", "conn_a");
     const provider = makeProvider((input) => {
       const url = String(input);
@@ -490,6 +490,55 @@ describe("Akahu provider boundary", () => {
       provider.readSnapshot({ connection: connectionA, start: null })
     );
     expect(snapshot.posted).toStrictEqual([]);
+  });
+
+  it("rejects more than the raw posted transaction limit after filtering", async () => {
+    const connectionA = scopedConnection("connection_a", "conn_a");
+    const provider = makeProvider((input) => {
+      const url = String(input);
+      if (url.endsWith("/accounts")) {
+        return Promise.resolve(
+          Response.json({
+            items: [
+              {
+                _id: "acc_a",
+                connection: { _id: "conn_a", name: "Bank A" },
+                name: "A",
+                status: "ACTIVE",
+                type: "CHECKING",
+              },
+            ],
+            success: true,
+          })
+        );
+      }
+      if (url.includes("/transactions/pending")) {
+        return Promise.resolve(Response.json({ items: [], success: true }));
+      }
+      return Promise.resolve(
+        Response.json({
+          items: Array.from({ length: 3001 }, (_, index) => ({
+            _account: "acc_a",
+            _id: `tx_${index}`,
+            amount: -1,
+            created_at: now,
+            date: now,
+            description: "Account transaction",
+            type: "CARD",
+            updated_at: now,
+          })),
+          success: true,
+        })
+      );
+    });
+
+    const error = await Effect.runPromise(
+      Effect.flip(
+        provider.readSnapshot({ connection: connectionA, start: null })
+      )
+    );
+
+    expect(error._tag).toBe("InvalidProviderResponseError");
   });
 
   it("bounds scoped pending transaction normalization", async () => {
