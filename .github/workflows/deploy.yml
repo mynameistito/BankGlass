@@ -10,8 +10,7 @@ on:
 jobs:
   deploy:
     if: >-
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
-      (github.event_name == 'pull_request' && github.event.action == 'closed')
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') || (github.event_name == 'pull_request' && github.event.action == 'closed')
 
     runs-on: ubuntu-latest
 
@@ -29,9 +28,7 @@ jobs:
       - name: Load production secrets from 1Password
         id: op_production
         if: >-
-          github.event_name == 'workflow_run' &&
-          github.event.workflow_run.event == 'push' &&
-          github.event.workflow_run.head_branch == 'main'
+          github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main'
         uses: 1password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
@@ -44,10 +41,7 @@ jobs:
       - name: Load preview secrets from 1Password
         id: op_preview
         if: >-
-          (github.event_name == 'workflow_run' &&
-          github.event.workflow_run.event == 'pull_request') ||
-          (github.event_name == 'pull_request' &&
-          github.event.action == 'closed')
+          (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request') || (github.event_name == 'pull_request' && github.event.action == 'closed')
         uses: 1password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
