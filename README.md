@@ -134,17 +134,35 @@ BankGlass includes an Alchemy deployment and a GitHub Actions workflow. Before d
 
 For a local deployment, use the Alchemy profile created above. The Akahu, Access, and Worker configuration values below are still required; Alchemy reads them from the environment while it creates the Worker. `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` are only needed when using non-interactive Cloudflare authentication instead of the local profile.
 
-Set these secrets in your environment for a local deployment, or as GitHub repository secrets for the included workflow:
+Set these secrets in your environment for a local deployment:
 
-| Secret | Purpose |
+| Local environment variable | Purpose |
 | --- | --- |
 | `AKAHU_APP_TOKEN` | Akahu Personal App ID token |
 | `AKAHU_USER_TOKEN` | Akahu user access token |
 | `API_BEARER_TOKEN` | Additional authentication for `/v1/*` routes |
 | `ACCESS_POLICY_AUD` | Audience tag of the Access application |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account for non-interactive deployment |
-| `CLOUDFLARE_API_TOKEN` | Production Cloudflare credential for non-interactive deployment |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare credential for non-interactive deployment |
+
+For the included workflow, set these GitHub repository secrets:
+
+| Repository secret | Purpose |
+| --- | --- |
+| `ACCESS_POLICY_AUD` | Audience tag of the Access application |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account for non-interactive deployment |
+| `OP_SERVICE_ACCOUNT_TOKEN` | 1Password service-account token used by the workflow |
+
+For the included workflow, store these fields in the `bankglass` item in the 1Password `github-actions` vault:
+
+| 1Password field | Purpose |
+| --- | --- |
+| `CLOUDFLARE_API_TOKEN` | Production Cloudflare credential |
+| `AKAHU_APP_TOKEN` | Akahu Personal App ID token |
+| `AKAHU_USER_TOKEN` | Akahu user access token |
+| `API_BEARER_TOKEN` | Production authentication for `/v1/*` routes |
 | `CLOUDFLARE_PREVIEW_API_TOKEN` | Least-privileged Cloudflare credential used only for same-repository PR previews |
+| `PREVIEW_API_BEARER_TOKEN` | Independently generated preview-only authentication for `/v1/*` routes |
 
 Set these non-secret values:
 
@@ -167,6 +185,8 @@ bun run deploy
 ```
 
 For CI, the workflow does not use your local Alchemy profile. Production deploys use `CLOUDFLARE_API_TOKEN`; same-repository PR previews use the separate, least-privileged `CLOUDFLARE_PREVIEW_API_TOKEN`. Both run non-interactively with `CLOUDFLARE_ACCOUNT_ID` and pass `--yes` to Alchemy. `CLOUDFLARE_WORKERS_SUBDOMAIN` and `PREVIEW_ACCESS_POLICY_AUD` are also required when preview deployments are enabled.
+
+The workflow also requires the `OP_SERVICE_ACCOUNT_TOKEN` GitHub repository secret. Create a 1Password service account with read access only to the `github-actions` vault, then add its token as that repository secret. Generate the preview bearer token independently from the production token; it is only loaded for preview deployments. The workflow pins the 1Password CLI to version `2.34.1`.
 
 The included deployment workflow deploys `main` after CI succeeds and creates previews for same-repository pull requests. After the first deployment:
 
