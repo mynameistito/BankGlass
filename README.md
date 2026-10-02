@@ -161,7 +161,7 @@ For the included workflow, store these fields in the `bankglass` item in the 1Pa
 | `AKAHU_APP_TOKEN` | Akahu Personal App ID token |
 | `AKAHU_USER_TOKEN` | Akahu user access token |
 | `API_BEARER_TOKEN` | Production authentication for `/v1/*` routes |
-| `CLOUDFLARE_PREVIEW_API_TOKEN` | Least-privileged Cloudflare credential used only for same-repository PR previews |
+| `CLOUDFLARE_PREVIEW_API_TOKEN` | Preferred least-privileged Cloudflare credential for same-repository PR previews; if this field is missing, previews fall back to `CLOUDFLARE_API_TOKEN` |
 | `PREVIEW_API_BEARER_TOKEN` | Independently generated preview-only authentication for `/v1/*` routes |
 
 Set these non-secret values:
@@ -184,7 +184,7 @@ $env:STAGE = "prod"
 bun run deploy
 ```
 
-For CI, the workflow does not use your local Alchemy profile. Production deploys use `CLOUDFLARE_API_TOKEN`; same-repository PR previews use the separate, least-privileged `CLOUDFLARE_PREVIEW_API_TOKEN`. Both run non-interactively with `CLOUDFLARE_ACCOUNT_ID` and pass `--yes` to Alchemy. `CLOUDFLARE_WORKERS_SUBDOMAIN` and `PREVIEW_ACCESS_POLICY_AUD` are also required when preview deployments are enabled.
+For CI, the workflow does not use your local Alchemy profile. Production deploys use `CLOUDFLARE_API_TOKEN`; same-repository PR previews prefer the separate, least-privileged `CLOUDFLARE_PREVIEW_API_TOKEN` and fall back to `CLOUDFLARE_API_TOKEN` only if the preview field is missing. This fallback requires the shared 1Password vault to be accessible so the workflow can load the production token; it cannot recover from an inaccessible vault. Both deployment paths run non-interactively with `CLOUDFLARE_ACCOUNT_ID` and pass `--yes` to Alchemy. `CLOUDFLARE_WORKERS_SUBDOMAIN` and `PREVIEW_ACCESS_POLICY_AUD` are also required when preview deployments are enabled.
 
 The workflow also requires the `OP_SERVICE_ACCOUNT_TOKEN` GitHub repository secret. Create a 1Password service account with read access only to the `github-actions` vault, then add its token as that repository secret. Generate the preview bearer token independently from the production token; it is only loaded for preview deployments. The workflow pins the 1Password CLI to version `2.34.1`.
 
