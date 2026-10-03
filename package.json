@@ -40,16 +40,16 @@
   "dependencies": {
     "@modelcontextprotocol/server": "2.0.0",
     "agents": "^0.22.0",
-    "alchemy": "^2.0.0-beta.75",
-    "effect": "^4.0.0-rc.112",
+    "alchemy": "2.0.0-beta.80",
+    "effect": "4.0.0",
     "jose": "^6.2.10",
     "zod": "^4.5.4"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.22.0",
     "@cloudflare/workers-types": "^5.20260831.1",
-    "@effect/platform-bun": "4.0.0-rc.112",
-    "@effect/platform-node": "4.0.0-rc.112",
+    "@effect/platform-bun": "4.0.0",
+    "@effect/platform-node": "4.0.0",
     "@typescript/native": "npm:typescript@^7.0.2",
     "eslint-plugin-github": "6.1.2",
     "eslint-plugin-sonarjs": "^4.2.0",
