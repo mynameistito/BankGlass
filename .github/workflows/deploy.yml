@@ -70,7 +70,7 @@ jobs:
       - name: Run Alchemy deployment
         # The trusted action keeps exact-SHA/fork policy centralized.
         # Preview code receives inert application credentials.
-        uses: mynameistito/alchemy-deploy@a205af0c587d8c0249b801ae6229479ecdb1aae6 # beta.80 + stable Effect 4
+        uses: mynameistito/alchemy-deploy@02ab31c8b67974e0aaf71b02e654f3ffda8de62c # v3.1.3
         env:
           AKAHU_APP_TOKEN: >-
             ${{ steps.op_production.outputs.AKAHU_APP_TOKEN || 'preview-provider-disabled' }}
