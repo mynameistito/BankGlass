@@ -25,6 +25,12 @@ jobs:
       pull-requests: write
 
     steps:
+      - name: Classify same-repository preview event
+        id: preview_context
+        env:
+          IS_SAME_REPOSITORY_PREVIEW: ${{ (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.head_repository.full_name == github.repository) || (github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository) }}
+        run: echo "eligible=$IS_SAME_REPOSITORY_PREVIEW" >> "$GITHUB_OUTPUT"
+
       - name: Load production secrets from 1Password
         id: op_production
         if: >-
@@ -40,18 +46,63 @@ jobs:
           AKAHU_USER_TOKEN: op://github-actions/bankglass/AKAHU_USER_TOKEN
           API_BEARER_TOKEN: op://github-actions/bankglass/API_BEARER_TOKEN
 
-      - name: Load preview secrets from 1Password
-        id: op_preview
-        if: >-
-          (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.head_repository.full_name == github.repository) || (github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository)
+      - name: Install 1Password CLI for preview credential lookup
+        if: steps.preview_context.outputs.eligible == 'true'
         uses: 1password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1
         with:
           version: 2.34.1
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
-          CLOUDFLARE_API_TOKEN: op://github-actions/bankglass/CLOUDFLARE_PREVIEW_API_TOKEN
+      - name: Resolve preview Cloudflare token from 1Password
+        id: op_preview_cloudflare
+        if: steps.preview_context.outputs.eligible == 'true'
+        shell: bash
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          item="$(op item get bankglass --vault github-actions --format json)"
+          preview_field_count="$(jq '[.fields[]? | select(.label == "CLOUDFLARE_PREVIEW_API_TOKEN")] | length' <<< "$item")"
+
+          if [[ "$preview_field_count" == "0" ]]; then
+            echo "Preview Cloudflare token field is absent; using the production token fallback." >&2
+            token="$(jq -r '[.fields[]? | select(.label == "CLOUDFLARE_API_TOKEN")] | first | .value // ""' <<< "$item")"
+          else
+            token="$(jq -r '[.fields[]? | select(.label == "CLOUDFLARE_PREVIEW_API_TOKEN")] | first | .value // ""' <<< "$item")"
+          fi
+
+          if [[ -z "$token" ]]; then
+            echo "The selected Cloudflare token field is empty." >&2
+            exit 1
+          fi
+
+          echo "::add-mask::$token"
+          echo "CLOUDFLARE_API_TOKEN=$token" >> "$GITHUB_OUTPUT"
+
+      - name: Load preview bearer token from 1Password
+        id: op_preview
+        if: steps.preview_context.outputs.eligible == 'true'
+        continue-on-error: true
+        uses: 1password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1
+        with:
+          version: 2.34.1
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
           API_BEARER_TOKEN: op://github-actions/bankglass/PREVIEW_API_BEARER_TOKEN
+
+      - name: Validate preview deployment credentials
+        if: steps.preview_context.outputs.eligible == 'true'
+        env:
+          ACCESS_POLICY_AUD: ${{ secrets.ACCESS_POLICY_AUD }}
+          API_BEARER_TOKEN: ${{ steps.op_preview.outputs.API_BEARER_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ steps.op_preview_cloudflare.outputs.CLOUDFLARE_API_TOKEN }}
+        run: |
+          test -n "$ACCESS_POLICY_AUD" || { echo "Missing ACCESS_POLICY_AUD" >&2; exit 1; }
+          test -n "$API_BEARER_TOKEN" || { echo "Missing preview API_BEARER_TOKEN" >&2; exit 1; }
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "Missing preview and fallback CLOUDFLARE_API_TOKEN" >&2; exit 1; }
 
       - name: Validate production secrets
         if: >-
@@ -82,7 +133,7 @@ jobs:
             ${{ github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && steps.op_production.outputs.API_BEARER_TOKEN || steps.op_preview.outputs.API_BEARER_TOKEN }}
 
           CLOUDFLARE_API_TOKEN: >-
-            ${{ github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && steps.op_production.outputs.CLOUDFLARE_API_TOKEN || steps.op_preview.outputs.CLOUDFLARE_API_TOKEN }}
+            ${{ github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && steps.op_production.outputs.CLOUDFLARE_API_TOKEN || steps.op_preview_cloudflare.outputs.CLOUDFLARE_API_TOKEN }}
 
           ACCESS_POLICY_AUD: ${{ secrets.ACCESS_POLICY_AUD }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
