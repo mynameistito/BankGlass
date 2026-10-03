@@ -30,23 +30,23 @@ export const Worker = Effect.gen(function* defineWorker() {
     crons: isProduction ? ["17 * * * *"] : [],
     domain: isProduction ? "bank.honetito.com" : null,
     env: {
-      ACCESS_APP_HOSTNAME: Config.string("ACCESS_APP_HOSTNAME"),
-      ACCESS_POLICY_AUD: Config.string("ACCESS_POLICY_AUD"),
-      ACCESS_TEAM_DOMAIN: Config.string("ACCESS_TEAM_DOMAIN"),
-      AKAHU_API_BASE_URL: Config.string("AKAHU_API_BASE_URL").pipe(
+      ACCESS_APP_HOSTNAME: Config.String("ACCESS_APP_HOSTNAME"),
+      ACCESS_POLICY_AUD: Config.String("ACCESS_POLICY_AUD"),
+      ACCESS_TEAM_DOMAIN: Config.String("ACCESS_TEAM_DOMAIN"),
+      AKAHU_API_BASE_URL: Config.String("AKAHU_API_BASE_URL").pipe(
         Config.orElse(() => Config.succeed("https://api.akahu.io/v1"))
       ),
-      AKAHU_APP_TOKEN: Config.redacted("AKAHU_APP_TOKEN"),
-      AKAHU_USER_TOKEN: Config.redacted("AKAHU_USER_TOKEN"),
-      API_BEARER_TOKEN: Config.redacted("API_BEARER_TOKEN"),
-      API_RATE_LIMIT_PER_MINUTE: Config.string(
+      AKAHU_APP_TOKEN: Config.Redacted("AKAHU_APP_TOKEN"),
+      AKAHU_USER_TOKEN: Config.Redacted("AKAHU_USER_TOKEN"),
+      API_BEARER_TOKEN: Config.Redacted("API_BEARER_TOKEN"),
+      API_RATE_LIMIT_PER_MINUTE: Config.String(
         "API_RATE_LIMIT_PER_MINUTE"
       ).pipe(Config.orElse(() => Config.succeed("60"))),
       BANK_STORE: bankStore,
-      REFRESH_COOLDOWN_SECONDS: Config.string("REFRESH_COOLDOWN_SECONDS").pipe(
+      REFRESH_COOLDOWN_SECONDS: Config.String("REFRESH_COOLDOWN_SECONDS").pipe(
         Config.orElse(() => Config.succeed("3600"))
       ),
-      SYNC_LOOKBACK_DAYS: Config.string("SYNC_LOOKBACK_DAYS").pipe(
+      SYNC_LOOKBACK_DAYS: Config.String("SYNC_LOOKBACK_DAYS").pipe(
         Config.orElse(() => Config.succeed("14"))
       ),
     },
