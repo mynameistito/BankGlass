@@ -494,15 +494,6 @@ export const makeAkahuProvider = (
       return items;
     });
 
-  const refreshPath = (connection: BankConnection) =>
-    resolveUpstreamConnectionId(connection).pipe(
-      Effect.map((connectionId) =>
-        connectionId === null
-          ? "/refresh"
-          : `/refresh/${encodeURIComponent(connectionId)}`
-      )
-    );
-
   return {
     displayName: "Akahu",
     id: AkahuProviderId,
@@ -532,7 +523,12 @@ export const makeAkahuProvider = (
       minimumInterval: Duration.seconds(config.refreshCooldownSeconds ?? 3600),
       propagationDelay: Duration.seconds(5),
       request: (connection) =>
-        refreshPath(connection).pipe(
+        resolveUpstreamConnectionId(connection).pipe(
+          Effect.map((connectionId) =>
+            connectionId === null
+              ? "/refresh"
+              : `/refresh/${encodeURIComponent(connectionId)}`
+          ),
           Effect.flatMap((path) =>
             request("requestRefresh", path, RefreshResponse, { method: "POST" })
           ),
