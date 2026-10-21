@@ -1,4 +1,5 @@
-import { Effect, Schema } from "effect";
+import { Effect, Predicate, Schema } from "effect";
+import type { SchemaIssue } from "effect";
 
 import { NonEmptyStringSchema } from "@/domain/identifiers";
 import { InvalidRequestError } from "@/errors";
@@ -70,6 +71,81 @@ const RuntimeConfigSchema = Schema.Struct({
   syncLookbackDays: PositiveIntegerString,
 });
 
+const configFields = new Set([
+  "accessAppHostname",
+  "accessAudience",
+  "accessTeamDomain",
+  "akahuAppToken",
+  "akahuUserToken",
+  "apiBaseUrl",
+  "apiBearerToken",
+  "apiRateLimitPerMinute",
+  "refreshCooldownSeconds",
+  "syncLookbackDays",
+]);
+
+const collectConfigFields = (
+  issue: SchemaIssue.Issue,
+  fields: Set<string>
+): void => {
+  switch (issue._tag) {
+    case "Pointer": {
+      for (const segment of issue.path) {
+        if (Predicate.isString(segment) && configFields.has(segment)) {
+          fields.add(segment);
+        }
+      }
+
+      collectConfigFields(issue.issue, fields);
+      break;
+    }
+
+    case "Composite":
+    case "AnyOf": {
+      for (const child of issue.issues) {
+        collectConfigFields(child, fields);
+      }
+
+      break;
+    }
+
+    case "Encoding": {
+      collectConfigFields(issue.issue, fields);
+      break;
+    }
+
+    case "Filter": {
+      collectConfigFields(issue.issue, fields);
+      break;
+    }
+
+    case "OneOf":
+    case "Forbidden":
+    case "InvalidType":
+    case "InvalidValue":
+    case "MissingKey":
+    case "UnexpectedKey": {
+      break;
+    }
+
+    default: {
+      break;
+    }
+  }
+};
+
+const mapConfigError = (error: Schema.SchemaError): InvalidRequestError => {
+  const fields = new Set<string>();
+  collectConfigFields(error.issue, fields);
+
+  return new InvalidRequestError({
+    message:
+      fields.size === 0
+        ? "Worker configuration is missing or invalid"
+        : `Worker configuration is missing or invalid: ${[...fields].join(", ")}`,
+  });
+};
+
 /** Parsed configuration required by the Worker, including sensitive credentials such as API tokens. */
 export type RuntimeConfig = typeof RuntimeConfigSchema.Type;
 
@@ -105,11 +181,4 @@ export const parseConfig = (env: ConfigEnv) =>
     apiRateLimitPerMinute: env.API_RATE_LIMIT_PER_MINUTE,
     refreshCooldownSeconds: env.REFRESH_COOLDOWN_SECONDS,
     syncLookbackDays: env.SYNC_LOOKBACK_DAYS,
-  }).pipe(
-    Effect.mapError(
-      () =>
-        new InvalidRequestError({
-          message: "Worker configuration is missing or invalid",
-        })
-    )
-  );
+  }).pipe(Effect.mapError(mapConfigError));

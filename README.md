@@ -90,103 +90,61 @@ BankGlass also verifies the Access JWT inside the Worker, including its signatur
 
 ## Local Development
 
-Install dependencies and create a local configuration file:
+Install dependencies:
 
 ```powershell
 bun install
-Copy-Item .dev.vars.example .dev.vars
 ```
 
-Fill in `.dev.vars`:
+Varlock loads configuration from [`.env.tpl`](.env.tpl), using the provided 1Password vault and item IDs. For local development, sign in to the 1Password CLI with desktop-app integration enabled, or set `OP_TOKEN` to a 1Password service-account token. The token itself is not stored in the item.
 
-```dotenv
-AKAHU_APP_TOKEN=replace-me
-AKAHU_USER_TOKEN=replace-me
-API_BEARER_TOKEN=replace-with-a-random-32-byte-token
-ACCESS_APP_HOSTNAME=domain.tld
-ACCESS_POLICY_AUD=replace-with-access-application-aud
-ACCESS_TEAM_DOMAIN=https://your-team.cloudflareaccess.com
-AKAHU_API_BASE_URL=https://api.akahu.io/v1
-REFRESH_COOLDOWN_SECONDS=3600
-SYNC_LOOKBACK_DAYS=14
-API_RATE_LIMIT_PER_MINUTE=60
-```
-
-Generate the REST bearer token with Bun:
-
-```bash
-bun -e 'console.log([...crypto.getRandomValues(new Uint8Array(32))].map((byte) => byte.toString(16).padStart(2, "0")).join(""))'
-```
-
-Start the local Worker:
+Set the Alchemy stage and start the local Worker:
 
 ```powershell
+$env:STAGE = "dev"
 bun run dev
 ```
 
-Alchemy receives `.dev.vars` through the `dev` script. The Worker intentionally has no local authentication bypass, so use the test suite for local boundary testing and an Access-protected deployment for end-to-end requests.
+The `dev` and `deploy` scripts use `varlock run` to resolve and validate values from [`.env.tpl`](.env.tpl) before starting Alchemy. `alchemy dev` simulates Cloudflare Access with the local identity `local@bankglass.test`; the bypass applies only to loopback requests and is not enabled in deployed Workers. REST routes still require the configured API bearer token. Use an Access-protected deployment for end-to-end Cloudflare Access testing.
 
-`.dev.vars`, `.env`, local Durable Object data, Alchemy state, and Wrangler state are ignored by Git. Never commit real credentials.
+`.env.tpl` contains secret references, not secret values. `.dev.vars`, `.env`, local Durable Object data, Alchemy state, and Wrangler state are ignored by Git. Never commit real credentials or a resolved environment file.
 
 ## Deploy
 
-BankGlass includes an Alchemy deployment and a GitHub Actions workflow. Before deploying a fork, replace the repository owner's production hostname in [`alchemy.run.ts`](alchemy.run.ts) and [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) with your own Access-protected hostname.
+BankGlass includes an Alchemy deployment and a GitHub Actions workflow. Before deploying a fork, set `ACCESS_APP_HOSTNAME` in the 1Password item to your own Access-protected production hostname.
 
-For a local deployment, use the Alchemy profile created above. The Akahu, Access, and Worker configuration values below are still required; Alchemy reads them from the environment while it creates the Worker. `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` are only needed when using non-interactive Cloudflare authentication instead of the local profile.
-
-Set these secrets in your environment for a local deployment:
-
-| Local environment variable | Purpose |
-| --- | --- |
-| `AKAHU_APP_TOKEN` | Akahu Personal App ID token |
-| `AKAHU_USER_TOKEN` | Akahu user access token |
-| `API_BEARER_TOKEN` | Additional authentication for `/v1/*` routes |
-| `ACCESS_POLICY_AUD` | Audience tag of the Access application |
-| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account for non-interactive deployment |
-| `CLOUDFLARE_API_TOKEN` | Cloudflare credential for non-interactive deployment |
-
-For the included workflow, set these GitHub repository secrets:
-
-| Repository secret | Purpose |
-| --- | --- |
-| `ACCESS_POLICY_AUD` | Audience tag of the Access application |
-| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account for non-interactive deployment |
-| `OP_SERVICE_ACCOUNT_TOKEN` | 1Password service-account token used by the workflow |
-
-For the included workflow, store these fields in the `bankglass` item in the 1Password `github-actions` vault:
+The referenced 1Password item needs these fields. Both local Varlock runs and GitHub deployments read their configuration from it:
 
 | 1Password field | Purpose |
 | --- | --- |
-| `CLOUDFLARE_API_TOKEN` | Production Cloudflare credential |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare credential used for production and preview deployments |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account used for deployment |
 | `AKAHU_APP_TOKEN` | Akahu Personal App ID token |
 | `AKAHU_USER_TOKEN` | Akahu user access token |
-| `API_BEARER_TOKEN` | Production authentication for `/v1/*` routes |
-| `CLOUDFLARE_PREVIEW_API_TOKEN` | Preferred least-privileged Cloudflare credential for same-repository PR previews; if this field is missing, previews fall back to `CLOUDFLARE_API_TOKEN` |
-| `PREVIEW_API_BEARER_TOKEN` | Independently generated preview-only authentication for `/v1/*` routes |
+| `API_BEARER_TOKEN` | Authentication for `/v1/*` routes; shared by production and previews |
+| `ACCESS_APP_HOSTNAME` | Production Access-protected hostname |
+| `ACCESS_POLICY_AUD` | Access application audience used by production and previews |
+| `ACCESS_TEAM_DOMAIN` | Cloudflare Access team domain |
+| `AKAHU_API_BASE_URL` | Akahu API base URL |
+| `API_RATE_LIMIT_PER_MINUTE` | API rate limit |
+| `REFRESH_COOLDOWN_SECONDS` | Minimum interval between refreshes |
+| `SYNC_LOOKBACK_DAYS` | Initial transaction lookback |
+| `CLOUDFLARE_WORKERS_SUBDOMAIN` | Workers subdomain used to form preview hostnames |
 
-Set these non-secret values:
+All these fields are marked sensitive in `.env.tpl`, so Varlock redacts them in its summaries. The workflow disables the Akahu provider credentials in preview deployments, but shares the Cloudflare deploy token and API bearer token with production. Use a Cloudflare token scoped for both deployment paths and be aware that preview code can receive the shared API bearer token.
 
-| Variable | Example | Default |
-| --- | --- | --- |
-| `ACCESS_APP_HOSTNAME` | `domain.tld` | Required |
-| `ACCESS_TEAM_DOMAIN` | `https://example.cloudflareaccess.com` | Required |
-| `AKAHU_API_BASE_URL` | `https://api.akahu.io/v1` | Shown value |
-| `API_RATE_LIMIT_PER_MINUTE` | `60` | `60` |
-| `REFRESH_COOLDOWN_SECONDS` | `3600` | `3600` |
-| `SYNC_LOOKBACK_DAYS` | `14` | `14` |
-| `CLOUDFLARE_WORKERS_SUBDOMAIN` | Your Workers subdomain | Required for PR previews |
-| `PREVIEW_ACCESS_POLICY_AUD` | Audience tag of the preview Access application | Required for PR previews |
+The only required GitHub repository secret is `OP_SERVICE_ACCOUNT_TOKEN`, the 1Password service-account token used to unlock the item. It is the bootstrap credential and cannot be fetched from the item it unlocks. Grant the service account read access to the vault containing the referenced item. For local development, use desktop-app auth or set `OP_TOKEN` in your shell instead.
 
-For a local production deployment, load the values into the environment and run:
+For a local production deployment, set the stage and run:
 
 ```powershell
 $env:STAGE = "prod"
 bun run deploy
 ```
 
-For CI, the workflow does not use your local Alchemy profile. Production deploys use `CLOUDFLARE_API_TOKEN`; same-repository PR previews prefer the separate, least-privileged `CLOUDFLARE_PREVIEW_API_TOKEN` and fall back to `CLOUDFLARE_API_TOKEN` only if the preview field is missing. This fallback requires the shared 1Password vault to be accessible so the workflow can load the production token; it cannot recover from an inaccessible vault. Both deployment paths run non-interactively with `CLOUDFLARE_ACCOUNT_ID` and pass `--yes` to Alchemy. `CLOUDFLARE_WORKERS_SUBDOMAIN` and `PREVIEW_ACCESS_POLICY_AUD` are also required when preview deployments are enabled.
+Varlock loads `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` from the item for local deploys as well as CI.
 
-The workflow also requires the `OP_SERVICE_ACCOUNT_TOKEN` GitHub repository secret. Create a 1Password service account with read access only to the `github-actions` vault, then add its token as that repository secret. Generate the preview bearer token independently from the production token; it is only loaded for preview deployments. The workflow pins the 1Password CLI to version `2.34.1`.
+For CI, the workflow loads all application and deployment values from this item and uses the same Cloudflare and API bearer credentials for previews and production. It pins the 1Password CLI to version `2.34.1`.
 
 The included deployment workflow deploys `main` after CI succeeds and creates previews for same-repository pull requests. After the first deployment:
 

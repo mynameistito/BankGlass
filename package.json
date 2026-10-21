@@ -29,8 +29,8 @@
   "type": "module",
   "module": "src/index.ts",
   "scripts": {
-    "deploy": "alchemy deploy",
-    "dev": "STAGE=dev alchemy dev --env-file .dev.vars",
+    "deploy": "varlock run -- alchemy deploy",
+    "dev": "varlock run -- alchemy dev",
     "test": "vitest run",
     "knip": "knip",
     "typecheck": "tsc --noEmit",
@@ -40,10 +40,12 @@
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.3.1",
+    "@varlock/1password-plugin": "2.0.5",
     "agents": "^0.29.0",
     "alchemy": "2.0.0-beta.83",
     "effect": "^4.0.5",
     "jose": "^6.2.13",
+    "varlock": "1.23.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
@@ -65,5 +67,8 @@
     "ultracite": "8.0.1",
     "vitest": "^4.1.11"
   },
-  "packageManager": "bun@1.4.3"
+  "packageManager": "bun@1.4.3",
+  "varlock": {
+    "loadPath": "./.env.tpl"
+  }
 }

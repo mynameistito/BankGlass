@@ -20,6 +20,9 @@ const isProduction = stage === "prod";
 
 /** Alchemy resource definition for the BankGlass Worker and its bindings. */
 export const Worker = Effect.gen(function* defineWorker() {
+  const accessAppHostname = yield* Config.String("ACCESS_APP_HOSTNAME");
+  const accessAudience = yield* Config.String("ACCESS_POLICY_AUD");
+
   const bankStore = DurableObjectResource("BANK_STORE", {
     className: "BankStoreDO",
   });
@@ -30,10 +33,16 @@ export const Worker = Effect.gen(function* defineWorker() {
       flags: ["nodejs_compat"],
     },
     crons: isProduction ? ["17 * * * *"] : [],
-    domain: isProduction ? "bank.honetito.com" : null,
+    dev: {
+      access: {
+        aud: accessAudience,
+        identity: { email: "local@bankglass.test" },
+      },
+    },
+    domain: isProduction ? accessAppHostname : null,
     env: {
       ACCESS_APP_HOSTNAME: Config.String("ACCESS_APP_HOSTNAME"),
-      ACCESS_POLICY_AUD: Config.String("ACCESS_POLICY_AUD"),
+      ACCESS_POLICY_AUD: accessAudience,
       ACCESS_TEAM_DOMAIN: Config.String("ACCESS_TEAM_DOMAIN"),
       AKAHU_API_BASE_URL: Config.String("AKAHU_API_BASE_URL").pipe(
         Config.orElse(() => Config.succeed("https://api.akahu.io/v1"))
@@ -79,4 +88,9 @@ export default Stack(
 );
 
 /** Runtime environment inferred from the Alchemy Worker resource definition. */
-export type WorkerEnv = InferEnv<typeof Worker>;
+export type WorkerEnv = InferEnv<typeof Worker> & {
+  readonly ALCHEMY_DEV_ACCESS?: {
+    readonly aud?: string;
+    readonly identity?: { readonly email?: string };
+  };
+};

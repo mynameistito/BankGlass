@@ -41,27 +41,32 @@ const getAccessJwks = (config: RuntimeConfig, fetchJwks: typeof fetch) => {
  * @param request - Incoming request carrying the Access JWT.
  * @param config - Runtime Access issuer and audience settings.
  * @param fetchJwks - Fetch implementation used for JWKS requests.
+ * @param localDevAccess - Whether Alchemy enabled its local Access simulation.
  * @returns An effect that succeeds when the assertion is valid.
  */
 export const authenticateAccess = (
   request: Request,
   config: RuntimeConfig,
-  fetchJwks: typeof fetch = fetch
+  fetchJwks: typeof fetch = fetch,
+  localDevAccess = false
 ) =>
-  Effect.tryPromise({
-    catch: () => new UnauthorizedAccessRequestError({}),
-    try: async () => {
-      const assertion = request.headers.get("Cf-Access-Jwt-Assertion");
+  localDevAccess &&
+  ["localhost", "127.0.0.1", "[::1]"].includes(new URL(request.url).hostname)
+    ? Effect.void
+    : Effect.tryPromise({
+        catch: () => new UnauthorizedAccessRequestError({}),
+        try: async () => {
+          const assertion = request.headers.get("Cf-Access-Jwt-Assertion");
 
-      if (assertion === null) {
-        throw new TypeError("Missing Access assertion");
-      }
+          if (assertion === null) {
+            throw new TypeError("Missing Access assertion");
+          }
 
-      const jwks = getAccessJwks(config, fetchJwks);
-      await jwtVerify(assertion, jwks, {
-        algorithms: ["RS256"],
-        audience: config.accessAudience,
-        issuer: config.accessTeamDomain,
+          const jwks = getAccessJwks(config, fetchJwks);
+          await jwtVerify(assertion, jwks, {
+            algorithms: ["RS256"],
+            audience: config.accessAudience,
+            issuer: config.accessTeamDomain,
+          });
+        },
       });
-    },
-  });
