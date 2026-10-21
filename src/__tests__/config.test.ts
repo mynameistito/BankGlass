@@ -42,7 +42,7 @@ describe("runtime configuration", () => {
     "rejects an invalid Akahu API URL: %s",
     async (url) => {
       await expect(parse({ AKAHU_API_BASE_URL: url })).rejects.toThrow(
-        "Worker configuration is missing or invalid:"
+        "Worker configuration is missing or invalid: apiBaseUrl"
       );
     }
   );

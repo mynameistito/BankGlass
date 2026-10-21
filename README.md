@@ -111,7 +111,7 @@ The `dev` and `deploy` scripts use `varlock run` to resolve and validate values 
 
 ## Deploy
 
-BankGlass includes an Alchemy deployment and a GitHub Actions workflow. Before deploying a fork, set `ACCESS_APP_HOSTNAME` in the 1Password item to your own Access-protected production hostname.
+BankGlass includes an Alchemy deployment and a GitHub Actions workflow. For a fork, grant its 1Password service account access to the referenced vault, or create equivalent items in its own account and replace the vault and item IDs in each `op()` reference in [`.env.tpl`](.env.tpl). Before local or GitHub deployment, set `ACCESS_APP_HOSTNAME` in the Access item to your own Access-protected production hostname.
 
 The referenced 1Password item needs these fields. Both local Varlock runs and GitHub deployments read their configuration from it:
 
