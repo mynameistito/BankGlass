@@ -22,6 +22,34 @@ const config = {
 } satisfies RuntimeConfig;
 
 describe("Cloudflare Access authentication", () => {
+  it("allows loopback requests when Alchemy's local Access stub is enabled", async () => {
+    await expect(
+      Effect.runPromise(
+        authenticateAccess(
+          new Request("http://localhost:1337/v1/accounts"),
+          config,
+          fetchAccessJwks,
+          true
+        )
+      )
+    ).resolves.toBeUndefined();
+  });
+
+  it("does not bypass Access for non-loopback requests", async () => {
+    const result = await Effect.runPromise(
+      Effect.flip(
+        authenticateAccess(
+          new Request("https://bank.example.test/v1/accounts"),
+          config,
+          fetchAccessJwks,
+          true
+        )
+      )
+    );
+
+    expect(result._tag).toBe("UnauthorizedAccessRequestError");
+  });
+
   it("accepts a correctly signed assertion with the configured issuer and audience", async () => {
     const request = new Request("https://bank.example.test/v1/accounts", {
       headers: { "Cf-Access-Jwt-Assertion": await makeAccessAssertion() },

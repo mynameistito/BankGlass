@@ -4,6 +4,7 @@
   "ignoreDependencies": [
     "cloudflare",
     "eslint-plugin-github",
-    "eslint-plugin-sonarjs"
+    "eslint-plugin-sonarjs",
+    "@varlock/1password-plugin"
   ]
 }

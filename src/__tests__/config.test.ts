@@ -32,18 +32,18 @@ describe("runtime configuration", () => {
   it.each(["AKAHU_APP_TOKEN", "AKAHU_USER_TOKEN", "API_BEARER_TOKEN"] as const)(
     "rejects an empty %s",
     async (name) => {
-      await expect(parse({ [name]: "" })).rejects.toMatchObject({
-        message: "Worker configuration is missing or invalid",
-      });
+      await expect(parse({ [name]: "" })).rejects.toThrow(
+        "Worker configuration is missing or invalid:"
+      );
     }
   );
 
   it.each(["not-a-url", `http://api.akahu.io/v1`])(
     "rejects an invalid Akahu API URL: %s",
     async (url) => {
-      await expect(parse({ AKAHU_API_BASE_URL: url })).rejects.toMatchObject({
-        message: "Worker configuration is missing or invalid",
-      });
+      await expect(parse({ AKAHU_API_BASE_URL: url })).rejects.toThrow(
+        "Worker configuration is missing or invalid: apiBaseUrl"
+      );
     }
   );
 

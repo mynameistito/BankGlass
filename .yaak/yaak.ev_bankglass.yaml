@@ -2,8 +2,8 @@ type: environment
 model: environment
 id: ev_bankglass
 workspaceId: wk_bankglass
-createdAt: 2026-08-27T00:00:00.000000
-updatedAt: 2026-08-27T00:00:00.000000
+createdAt: 2026-08-27T00:00:00
+updatedAt: 2026-10-21T23:28:02.566626100
 name: Base Environment
 public: true
 base: true
@@ -12,21 +12,23 @@ parentId: null
 variables:
   - enabled: true
     name: base_url
-    value: https://domain.tld
-    id: null
+    value: http://localhost:1337
+    id: D8MdgXzR6n
   - enabled: true
     name: cf_access_client_id
     value: ""
-    id: null
+    id: keFZXGBAV0
   - enabled: true
     name: cf_access_client_secret
     value: ""
-    id: null
+    id: wdyt5YqeGX
   - enabled: true
     name: api_bearer_token
     value: ""
-    id: null
+    id: HnzIynjkWw
   - enabled: true
     name: account_id
     value: replace-with-account-id
-    id: null
+    id: NpAjmpGN6v
+color: null
+sortPriority: 0.0

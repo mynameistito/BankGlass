@@ -72,6 +72,20 @@ const internalErrorResponse = () =>
     { headers: { "Cache-Control": "no-store" }, status: 500 }
   );
 
+const configurationErrorResponse = (error: { readonly message: string }) =>
+  Response.json(
+    {
+      error: {
+        code: "CONFIGURATION_ERROR",
+        message: error.message,
+      },
+    },
+    { status: 500 }
+  );
+
+const handleConfigurationError = (error: { readonly message: string }) =>
+  Effect.succeed(configurationErrorResponse(error));
+
 const rateLimitedResponse = (retryAfterSeconds: number) =>
   Response.json(
     {
@@ -104,7 +118,12 @@ const run = (request: Request, env: WorkerEnv) =>
     const config = yield* parseConfig(env);
 
     return yield* Effect.gen(function* authenticatedRequest() {
-      yield* authenticateAccess(request, config);
+      yield* authenticateAccess(
+        request,
+        config,
+        fetch,
+        env.ALCHEMY_DEV_ACCESS !== undefined
+      );
 
       if (new URL(request.url).pathname === "/mcp") {
         const store = yield* BankStore;
@@ -141,20 +160,10 @@ const run = (request: Request, env: WorkerEnv) =>
     Effect.catchTag("UnauthorizedAccessRequestError", () =>
       Effect.succeed(accessDeniedResponse())
     ),
+    Effect.catchTag("InvalidRequestError", handleConfigurationError),
     Effect.catchIf(
       () => true,
-      () =>
-        Effect.succeed(
-          Response.json(
-            {
-              error: {
-                code: "CONFIGURATION_ERROR",
-                message: "Service configuration is invalid",
-              },
-            },
-            { status: 500 }
-          )
-        )
+      () => Effect.succeed(internalErrorResponse())
     )
   );
 
