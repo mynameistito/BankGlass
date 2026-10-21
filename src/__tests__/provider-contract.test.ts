@@ -8,6 +8,7 @@ import { ProviderRegistry, providerRegistryLayer } from "@/provider-registry";
 
 const providerId = Schema.decodeUnknownSync(ProviderIdSchema)("contract-test");
 const unknownProviderId = Schema.decodeUnknownSync(ProviderIdSchema)("unknown");
+
 const connection: BankConnection = {
   authorization: { _tag: "Connected" },
   createdAt: "2026-09-07T00:00:00.000Z",
@@ -19,6 +20,7 @@ const connection: BankConnection = {
   providerId,
   updatedAt: "2026-09-07T00:00:00.000Z",
 };
+
 const adapter: BankProviderAdapter = {
   displayName: "Contract provider",
   id: providerId,

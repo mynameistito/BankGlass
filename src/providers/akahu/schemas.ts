@@ -7,8 +7,10 @@ const DateTime = Schema.String.pipe(
     Schema.makeFilter((value: string) => !Number.isNaN(Date.parse(value)))
   )
 );
+
 const NullableString = Schema.optional(Schema.NullOr(Schema.String));
 const NullableNumber = Schema.optional(Schema.NullOr(Schema.Number));
+
 const Meta = Schema.optional(
   Schema.Struct({
     card_suffix: NullableString,
@@ -75,6 +77,7 @@ export const AccountsResponse = Schema.Struct({
   items: Schema.Array(AkahuAccount),
   success: Schema.Literal(true),
 });
+
 /** Akahu paginated posted-transactions response. */
 export const TransactionsResponse = Schema.Struct({
   cursor: Schema.optional(
@@ -83,10 +86,12 @@ export const TransactionsResponse = Schema.Struct({
   items: Schema.Array(AkahuTransaction),
   success: Schema.Literal(true),
 });
+
 /** Akahu pending-transactions response. */
 export const PendingResponse = Schema.Struct({
   items: Schema.Array(AkahuPendingTransaction),
   success: Schema.Literal(true),
 });
+
 /** Akahu refresh response. */
 export const RefreshResponse = Schema.Struct({ success: Schema.Literal(true) });

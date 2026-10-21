@@ -31,5 +31,6 @@ export const BankConnectionSchema = Schema.Struct({
   providerId: ProviderIdSchema,
   updatedAt: IsoDateTimeSchema,
 });
+
 /** Persisted, non-secret metadata for one configured provider connection. */
 export type BankConnection = typeof BankConnectionSchema.Type;

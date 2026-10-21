@@ -45,12 +45,15 @@ const retryConnection = (
         refresh: "RequestIfSupported",
       })
     );
+
     if (Result.isSuccess(refreshed)) {
       return refreshed.success;
     }
+
     if (refreshed.failure._tag === "SyncInProgressError") {
       return failureOutcome(original, refreshed.failure._tag);
     }
+
     yield* Effect.logWarning(
       "Scheduled refresh retry failed; reading current provider cache",
       {
@@ -59,6 +62,7 @@ const retryConnection = (
         providerId: original.providerId,
       }
     );
+
     return yield* readAvailableConnection(service, original);
   });
 
@@ -67,12 +71,18 @@ const isRetryableFailure = (
 ): outcome is FailedConnectionSync =>
   outcome._tag === "Failure" && outcome.errorTag !== "SyncInProgressError";
 
-/** Run scheduled synchronization across enabled connections with isolated retries. */
+/**
+ * Run scheduled synchronization across enabled connections with isolated retries.
+ *
+ * @param service - Synchronization service used for scheduled reads.
+ * @returns An effect containing the outcome for each enabled connection.
+ */
 export const synchronizeScheduled = (service: SyncServiceService) =>
   Effect.gen(function* synchronizeScheduledSync() {
     const first = yield* service.synchronizeEnabled({
       refresh: "RequestIfSupported",
     });
+
     const afterCooldownFallback = yield* Effect.all(
       first.map((outcome) => {
         if (
@@ -81,6 +91,7 @@ export const synchronizeScheduled = (service: SyncServiceService) =>
         ) {
           return Effect.succeed(outcome);
         }
+
         return Effect.logInfo(
           "Scheduled refresh deferred; reading current provider cache",
           {
@@ -91,7 +102,9 @@ export const synchronizeScheduled = (service: SyncServiceService) =>
       }),
       { concurrency: 4 }
     );
+
     const retryable = afterCooldownFallback.filter(isRetryableFailure);
+
     for (const outcome of afterCooldownFallback) {
       if (
         outcome._tag === "Failure" &&
@@ -104,21 +117,26 @@ export const synchronizeScheduled = (service: SyncServiceService) =>
         });
       }
     }
+
     if (retryable.length === 0) {
       return afterCooldownFallback;
     }
+
     yield* Effect.logWarning(
       "Scheduled connection synchronization failed; retrying failed connections in one minute",
       { failedConnections: retryable.length }
     );
     yield* Effect.sleep("1 minute");
+
     const retries = yield* Effect.all(
       retryable.map((original) => retryConnection(service, original)),
       { concurrency: 4 }
     );
+
     const retriedIds = new Set(
       retryable.map((outcome) => outcome.connectionId)
     );
+
     return [
       ...afterCooldownFallback.filter(
         (outcome) => !retriedIds.has(outcome.connectionId)

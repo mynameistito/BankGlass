@@ -43,13 +43,13 @@ export interface AkahuConfig {
   /** Akahu API origin and version prefix. */
   readonly baseUrl: string;
   /** Personal App ID token. */
-  readonly appToken: Redacted.Redacted<string>;
+  readonly appToken: Redacted.Redacted;
   /** Explicit-refresh cooldown in seconds; defaults to one hour. */
   readonly refreshCooldownSeconds?: number;
   /** Per-request timeout; defaults to ten seconds. */
   readonly requestTimeoutMs?: number;
   /** User access token for the Personal App. */
-  readonly userToken: Redacted.Redacted<string>;
+  readonly userToken: Redacted.Redacted;
 }
 
 const nowIso = Clock.currentTimeMillis.pipe(
@@ -64,12 +64,15 @@ const upstreamConnectionId = (connection: BankConnection) =>
 const resolveUpstreamConnectionId = (connection: BankConnection) =>
   Effect.gen(function* resolveConnectionScope() {
     const connectionId = upstreamConnectionId(connection);
+
     if (connectionId !== null && connectionId.trim().length > 0) {
       return connectionId.trim();
     }
+
     if (connection.id === AkahuDefaultConnectionId) {
       return null;
     }
+
     return yield* Effect.fail(
       new InvalidProviderResponseError({
         details: "Akahu connection requires metadata.akahuConnectionId",
@@ -107,25 +110,26 @@ const normalizeAccounts = (
   }));
 
 const pendingId = (item: (typeof PendingResponse.Type)["items"][number]) =>
-  Effect.promise(() =>
-    crypto.subtle.digest(
-      "SHA-256",
-      new TextEncoder().encode(
-        [
-          item._account,
-          item.date,
-          item.description,
-          item.amount,
-          item.type,
-          item.updated_at,
-          item.meta?.card_suffix ?? "",
-          item.meta?.code ?? "",
-          item.meta?.other_account ?? "",
-          item.meta?.particulars ?? "",
-          item.meta?.reference ?? "",
-        ].join("\u001F")
+  Effect.promise(
+    async () =>
+      await crypto.subtle.digest(
+        "SHA-256",
+        new TextEncoder().encode(
+          [
+            item._account,
+            item.date,
+            item.description,
+            item.amount,
+            item.type,
+            item.updated_at,
+            item.meta?.card_suffix ?? "",
+            item.meta?.code ?? "",
+            item.meta?.other_account ?? "",
+            item.meta?.particulars ?? "",
+            item.meta?.reference ?? "",
+          ].join("\u001F")
+        )
       )
-    )
   ).pipe(
     Effect.map((hash) =>
       Schema.decodeUnknownSync(ProviderTransactionIdSchema)(
@@ -141,20 +145,24 @@ const parseRetryAfter = (raw: string | null): number | null => {
   if (raw === null) {
     return null;
   }
+
   if (/^\d+$/u.test(raw)) {
     return Number(raw);
   }
+
   const target = Date.parse(raw);
+
   if (Number.isNaN(target)) {
     return null;
   }
+
   return Math.max(0, Math.ceil((target - Date.now()) / 1000));
 };
 
 const parseResponseJson = <A>(
   operation: string,
   response: Response,
-  schema: Schema.Codec<A, unknown, never, never>
+  schema: Schema.Codec<A, unknown>
 ): Effect.Effect<A, BankProviderError> => {
   if (response.status === 401 || response.status === 403) {
     return Effect.fail(
@@ -163,6 +171,7 @@ const parseResponseJson = <A>(
       })
     );
   }
+
   if (response.status === 429) {
     return Effect.fail(
       new ProviderRateLimitError({
@@ -170,6 +179,7 @@ const parseResponseJson = <A>(
       })
     );
   }
+
   if (!response.ok) {
     return Effect.fail(
       new ProviderUnavailableError({
@@ -178,12 +188,14 @@ const parseResponseJson = <A>(
       })
     );
   }
+
   return Effect.gen(function* parseJsonResponse() {
     const json = yield* Effect.tryPromise({
       catch: (error) =>
         new InvalidProviderResponseError({ details: String(error), operation }),
       try: async () => await response.json(),
     });
+
     return yield* Schema.decodeUnknownEffect(schema)(json).pipe(
       Effect.mapError(
         (error) =>
@@ -203,9 +215,11 @@ const normalizePendingTransaction = (
   Effect.gen(function* normalizePending() {
     const providerTransactionId = yield* pendingId(item);
     const now = yield* nowIso;
+
     const providerAccountId = Schema.decodeUnknownSync(ProviderAccountIdSchema)(
       item._account
     );
+
     return {
       amount: item.amount,
       cardSuffix: item.meta?.card_suffix ?? null,
@@ -233,6 +247,7 @@ const normalizePostedTransaction = (
   const providerAccountId = Schema.decodeUnknownSync(ProviderAccountIdSchema)(
     item._account
   );
+
   return {
     amount: item.amount,
     balance: item.balance ?? null,
@@ -259,6 +274,21 @@ const normalizePostedTransaction = (
 };
 
 /**
+ * Resolve the API path for refreshing the configured upstream connection.
+ *
+ * @param connection - BankGlass connection to refresh.
+ * @returns The Akahu refresh path.
+ */
+const refreshPath = (connection: BankConnection) =>
+  resolveUpstreamConnectionId(connection).pipe(
+    Effect.map((connectionId) =>
+      connectionId === null
+        ? "/refresh"
+        : `/refresh/${encodeURIComponent(connectionId)}`
+    )
+  );
+
+/**
  * Construct the bundled Akahu provider adapter.
  *
  * @param config - Redacted Akahu credentials and request settings.
@@ -269,10 +299,19 @@ export const makeAkahuProvider = (
   config: AkahuConfig,
   fetchImplementation: typeof fetch = fetch
 ): BankProviderAdapter => {
+  /**
+   * Build a schema-validated Akahu HTTP request effect.
+   *
+   * @param operation - Operation label used in typed provider errors.
+   * @param path - Relative Akahu API path.
+   * @param schema - Response schema to decode.
+   * @param init - Optional fetch request options.
+   * @returns An effect that performs and decodes the request.
+   */
   const request = <A>(
     operation: string,
     path: string,
-    schema: Schema.Codec<A, unknown, never, never>,
+    schema: Schema.Codec<A, unknown>,
     init?: RequestInit
   ): Effect.Effect<A, BankProviderError> => {
     const requestEffect = Effect.acquireUseRelease(
@@ -281,8 +320,8 @@ export const makeAkahuProvider = (
         Effect.tryPromise({
           catch: (error) =>
             new ProviderUnavailableError({ cause: error, operation }),
-          try: () =>
-            fetchImplementation(`${config.baseUrl}${path}`, {
+          try: async () =>
+            await fetchImplementation(`${config.baseUrl}${path}`, {
               ...init,
               headers: {
                 Accept: "application/json",
@@ -296,7 +335,10 @@ export const makeAkahuProvider = (
             parseResponseJson(operation, response, schema)
           )
         ),
-      (controller) => Effect.sync(() => controller.abort())
+      (controller) =>
+        Effect.sync(() => {
+          controller.abort();
+        })
     ).pipe(
       Effect.timeoutOrElse({
         duration: config.requestTimeoutMs ?? 10_000,
@@ -306,6 +348,7 @@ export const makeAkahuProvider = (
           ),
       })
     );
+
     return init?.method === "POST"
       ? requestEffect
       : requestEffect.pipe(
@@ -322,11 +365,13 @@ export const makeAkahuProvider = (
     Effect.gen(function* loadAccounts() {
       const connectionId = yield* resolveUpstreamConnectionId(connection);
       const now = yield* nowIso;
+
       const response = yield* request(
         "getAccounts",
         "/accounts",
         AccountsResponse
       );
+
       const scopedResponse =
         connectionId === null
           ? response
@@ -336,6 +381,7 @@ export const makeAkahuProvider = (
                 (item) => item.connection._id === connectionId
               ),
             };
+
       if (connectionId !== null && scopedResponse.items.length === 0) {
         return yield* Effect.fail(
           new InvalidProviderResponseError({
@@ -344,6 +390,7 @@ export const makeAkahuProvider = (
           })
         );
       }
+
       return normalizeAccounts(scopedResponse, now);
     });
 
@@ -360,8 +407,10 @@ export const makeAkahuProvider = (
       let rawItems = rawItemOffset;
       let cursor: string | null = null;
       let page = 0;
+
       do {
         page += 1;
+
         if (page > maxTransactionPages) {
           return yield* Effect.fail(
             new InvalidProviderResponseError({
@@ -370,22 +419,29 @@ export const makeAkahuProvider = (
             })
           );
         }
+
         const query = new URLSearchParams();
+
         if (start !== null) {
           query.set("start", start);
         }
+
         if (cursor !== null) {
           query.set("cursor", cursor);
         }
+
         const response = yield* request(
           "getTransactions",
           `/accounts/${encodeURIComponent(accountId)}/transactions?${query.toString()}`,
           TransactionsResponse
         );
+
         const scopedItems = response.items.filter((item) =>
           allowedAccountIds.has(item._account)
         );
+
         rawItems += scopedItems.length;
+
         if (rawItems > maxRawTransactionItems) {
           return yield* Effect.fail(
             new InvalidProviderResponseError({
@@ -394,6 +450,7 @@ export const makeAkahuProvider = (
             })
           );
         }
+
         if (
           postedItemOffset + items.length + scopedItems.length >
           maxPostedTransactions
@@ -405,8 +462,10 @@ export const makeAkahuProvider = (
             })
           );
         }
+
         items.push(...scopedItems);
         const nextCursor = response.cursor?.next ?? null;
+
         if (nextCursor !== null && seenCursors.has(nextCursor)) {
           return yield* Effect.fail(
             new InvalidProviderResponseError({
@@ -415,11 +474,14 @@ export const makeAkahuProvider = (
             })
           );
         }
+
         if (nextCursor !== null) {
           seenCursors.add(nextCursor);
         }
+
         cursor = nextCursor;
       } while (cursor !== null);
+
       return { items, rawItems };
     });
 
@@ -431,6 +493,7 @@ export const makeAkahuProvider = (
     Effect.gen(function* readPostedTransactions() {
       const items: ProviderPostedTransaction[] = [];
       let rawItems = 0;
+
       for (const accountId of allowedAccountIds) {
         const { items: accountItems, rawItems: accountRawItems } =
           yield* readPostedAccount(
@@ -440,6 +503,7 @@ export const makeAkahuProvider = (
             rawItems,
             items.length
           );
+
         rawItems = accountRawItems;
         const now = yield* nowIso;
         items.push(
@@ -448,6 +512,7 @@ export const makeAkahuProvider = (
           )
         );
       }
+
       return items;
     });
 
@@ -458,16 +523,20 @@ export const makeAkahuProvider = (
     Effect.gen(function* readPendingTransactions() {
       const items: ProviderPendingTransaction[] = [];
       let rawItems = 0;
+
       for (const accountId of allowedAccountIds) {
         const response = yield* request(
           "getPendingTransactions",
           `/accounts/${encodeURIComponent(accountId)}/transactions/pending`,
           PendingResponse
         );
+
         const scopedItems = response.items.filter((item) =>
           allowedAccountIds.has(item._account)
         );
+
         rawItems += scopedItems.length;
+
         if (rawItems > maxRawTransactionItems) {
           return yield* Effect.fail(
             new InvalidProviderResponseError({
@@ -476,6 +545,7 @@ export const makeAkahuProvider = (
             })
           );
         }
+
         if (items.length + scopedItems.length > maxPendingTransactions) {
           return yield* Effect.fail(
             new InvalidProviderResponseError({
@@ -484,13 +554,16 @@ export const makeAkahuProvider = (
             })
           );
         }
+
         const normalizedItems = yield* Effect.all(
           scopedItems.map((item) =>
             normalizePendingTransaction(item, currencyByAccount)
           )
         );
+
         items.push(...normalizedItems);
       }
+
       return items;
     });
 
@@ -501,14 +574,17 @@ export const makeAkahuProvider = (
     readSnapshot: ({ connection, start }) =>
       Effect.gen(function* readSnapshot() {
         const accounts = yield* readAccounts(connection);
+
         const currencyByAccount = new Map(
           accounts.map(
             (account) => [account.providerAccountId, account.currency] as const
           )
         );
+
         const allowedAccountIds = new Set(
           accounts.map((account) => String(account.providerAccountId))
         );
+
         const [posted, pending] = yield* Effect.all(
           [
             readPosted(start, currencyByAccount, allowedAccountIds),
@@ -516,6 +592,7 @@ export const makeAkahuProvider = (
           ],
           { concurrency: 2 }
         );
+
         return { accounts, pending, posted };
       }),
     refresh: {
@@ -523,12 +600,7 @@ export const makeAkahuProvider = (
       minimumInterval: Duration.seconds(config.refreshCooldownSeconds ?? 3600),
       propagationDelay: Duration.seconds(5),
       request: (connection) =>
-        resolveUpstreamConnectionId(connection).pipe(
-          Effect.map((connectionId) =>
-            connectionId === null
-              ? "/refresh"
-              : `/refresh/${encodeURIComponent(connectionId)}`
-          ),
+        refreshPath(connection).pipe(
           Effect.flatMap((path) =>
             request("requestRefresh", path, RefreshResponse, { method: "POST" })
           ),

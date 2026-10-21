@@ -1,4 +1,4 @@
-import { env } from "cloudflare:test";
+import { env } from "cloudflare:workers";
 import { Effect, Schema } from "effect";
 import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -22,28 +22,37 @@ import { routeMcpRequest, validateMcpTransactionQuery } from "@/mcp-api";
 
 const hostname = "bank.example.test";
 const time = "2026-08-26T00:00:00.000Z";
+
 const connectionId = Schema.decodeUnknownSync(ConnectionIdSchema)(
   "connection_akahu_default"
 );
+
 const providerId = Schema.decodeUnknownSync(ProviderIdSchema)("akahu");
+
 const secondConnectionId = Schema.decodeUnknownSync(ConnectionIdSchema)(
   "connection_simplefin_status"
 );
+
 const secondProviderId =
   Schema.decodeUnknownSync(ProviderIdSchema)("simplefin");
+
 const providerAccountId = Schema.decodeUnknownSync(ProviderAccountIdSchema)(
   "account_test"
 );
-const getStore = () =>
-  Effect.runPromise(
+
+const getStore = async () =>
+  await Effect.runPromise(
     BankStore.pipe(Effect.provide(doBankStoreLive(env.BANK_STORE)))
   );
+
 const resetStore = async () => {
   const stub = env.BANK_STORE.getByName("bankglass");
+
   if (!isStoreStub(stub)) {
     throw new TypeError("BANK_STORE does not expose the command RPC");
   }
-  await stub.command({ args: [], name: "reset" });
+
+  await Promise.resolve(stub.command({ args: [], name: "reset" }));
 };
 
 const providerAccount: ProviderAccount = {
@@ -120,6 +129,7 @@ interface RpcRequest {
   readonly method: string;
   readonly params?: object;
 }
+
 interface ToolArguments {
   readonly accountId?: string;
   readonly cursor?: string;
@@ -128,8 +138,12 @@ interface ToolArguments {
   readonly status?: "posted" | "pending";
   readonly to?: string;
 }
+
 const toolResponseSchema = z.object({
-  result: z.object({ content: z.array(z.object({ text: z.string() })) }),
+  result: z.object({
+    content: z.array(z.object({ text: z.string() })),
+    structuredContent: z.unknown().optional(),
+  }),
 });
 
 const request = (message: RpcRequest, headers: Record<string, string> = {}) =>
@@ -150,13 +164,19 @@ const send = async (message: RpcRequest, headers?: Record<string, string>) => {
     await getStore(),
     hostname
   );
+
   const body = await response.text();
   const dataLine = body.split("\n").find((line) => line.startsWith("data: "));
-  return { body, message: JSON.parse(dataLine?.slice(6) ?? "{}"), response };
+
+  return {
+    body,
+    message: z.unknown().parse(JSON.parse(dataLine?.slice(6) ?? "{}")),
+    response,
+  };
 };
 
-const callTool = (id: number, name: string, args: ToolArguments = {}) =>
-  send({
+const callTool = async (id: number, name: string, args: ToolArguments = {}) =>
+  await send({
     id,
     jsonrpc: "2.0",
     method: "tools/call",
@@ -188,9 +208,11 @@ describe("MCP protocol boundary", () => {
     await Effect.runPromise(
       store.completeSync(connectionId, time, null, "mcp-test")
     );
+
     const accounts = await Effect.runPromise(
       store.listAccounts({ connectionId, providerId: null })
     );
+
     const posted = await Effect.runPromise(
       store.listTransactions({
         accountId: null,
@@ -203,6 +225,7 @@ describe("MCP protocol boundary", () => {
         to: null,
       })
     );
+
     const pendingPage = await Effect.runPromise(
       store.listTransactions({
         accountId: null,
@@ -215,14 +238,19 @@ describe("MCP protocol boundary", () => {
         to: null,
       })
     );
+
     const [seededAccount] = accounts;
+
     const seededNew = posted.items.find(
       (item) => item.providerTransactionId === "transaction_new"
     );
+
     const seededOld = posted.items.find(
       (item) => item.providerTransactionId === "transaction_old"
     );
+
     const [seededPending] = pendingPage.items;
+
     if (
       seededAccount === undefined ||
       seededNew === undefined ||
@@ -231,6 +259,7 @@ describe("MCP protocol boundary", () => {
     ) {
       throw new TypeError("Expected seeded MCP records");
     }
+
     account = seededAccount;
     postedNew = seededNew;
     postedOld = seededOld;
@@ -248,6 +277,7 @@ describe("MCP protocol boundary", () => {
         protocolVersion: "2025-06-18",
       },
     });
+
     expect(initialized.response.status).toBe(200);
     expect(initialized.message).toMatchObject({
       id: 1,
@@ -311,29 +341,39 @@ describe("MCP protocol boundary", () => {
       limit: 1,
       to: "2026-08-25T00:00:00+00:00",
     });
-    expect(transactions.message).toMatchObject({
-      result: {
-        content: [{ text: expect.stringContaining('"nextCursor":"') }],
-        structuredContent: {
-          items: [{ providerTransactionId: "transaction_new" }],
-          nextCursor: expect.any(String),
-        },
-      },
-    });
+
+    const transactionResponse = toolResponseSchema.parse(transactions.message);
+
+    const transactionContent =
+      transactionResponse.result.content[0]?.text ?? "";
+
+    const transactionData = z
+      .object({
+        items: z.array(z.object({ providerTransactionId: z.string() })),
+        nextCursor: z.string(),
+      })
+      .parse(transactionResponse.result.structuredContent);
 
     const status = await callTool(4, "get_sync_status");
-    expect(status.message).toMatchObject({
-      result: {
-        content: [{ text: expect.stringContaining('"status":"idle"') }],
-        structuredContent: {
-          result: [{ connectionId, providerId, status: "idle" }],
-        },
-      },
+    const statusResponse = toolResponseSchema.parse(status.message);
+    const statusContent = statusResponse.result.content[0]?.text ?? "";
+
+    expect({
+      hasNextCursor: transactionData.nextCursor.length > 0,
+      hasStatus: statusContent.includes('"status":"idle"'),
+      hasTransactionCursor: transactionContent.includes('"nextCursor":"'),
+      transactionId: transactionData.items[0]?.providerTransactionId,
+    }).toStrictEqual({
+      hasNextCursor: true,
+      hasStatus: true,
+      hasTransactionCursor: true,
+      transactionId: "transaction_new",
     });
   });
 
   it("returns all connection statuses without inferring a primary connection", async () => {
     const store = await getStore();
+
     const secondConnection: BankConnection = {
       authorization: { _tag: "Connected" },
       createdAt: time,
@@ -345,10 +385,12 @@ describe("MCP protocol boundary", () => {
       providerId: secondProviderId,
       updatedAt: time,
     };
+
     await Effect.runPromise(store.saveConnection(secondConnection));
 
     const status = await callTool(5, "get_sync_status");
     const message = toolResponseSchema.parse(status.message);
+
     const statuses = z
       .array(z.object({ connectionId: z.string(), providerId: z.string() }))
       .parse(JSON.parse(message.result.content[0]?.text ?? "[]"));
@@ -362,26 +404,27 @@ describe("MCP protocol boundary", () => {
   it("paginates transaction results using the returned cursor", async () => {
     const first = await callTool(1, "list_transactions", { limit: 1 });
     const firstMessage = toolResponseSchema.parse(first.message);
+
     const firstPage = z
       .object({
         items: z.object({ id: z.string() }).array(),
         nextCursor: z.string(),
       })
       .parse(JSON.parse(firstMessage.result.content[0]?.text ?? "{}"));
+
     const next = await callTool(2, "list_transactions", {
       cursor: firstPage.nextCursor,
       limit: 1,
     });
-    expect(next.message).toMatchObject({
-      result: {
-        content: [{ text: expect.stringContaining(postedOld.id) }],
-      },
-    });
+
+    const nextResponse = toolResponseSchema.parse(next.message);
+    expect(nextResponse.result.content[0]?.text).toContain(postedOld.id);
     expect(firstPage.items[0]?.id).toBe(postedNew.id);
 
     const pendingPage = await callTool(3, "list_transactions", {
       status: "pending",
     });
+
     expect(pendingPage.message).toMatchObject({
       result: { structuredContent: { items: [{ id: pendingStored.id }] } },
     });
@@ -416,6 +459,7 @@ describe("MCP protocol boundary", () => {
     });
 
     const store = await getStore();
+
     const hostileHost = await routeMcpRequest(
       request(
         { id: 2, jsonrpc: "2.0", method: "tools/list" },
@@ -424,6 +468,7 @@ describe("MCP protocol boundary", () => {
       store,
       hostname
     );
+
     expect(hostileHost.status).toBe(403);
 
     const hostileOrigin = await routeMcpRequest(
@@ -434,6 +479,7 @@ describe("MCP protocol boundary", () => {
       store,
       hostname
     );
+
     expect(hostileOrigin.status).toBe(403);
   });
 
@@ -452,11 +498,13 @@ describe("MCP protocol boundary", () => {
         to: "2026-08-27T00:00:00+00:00",
       })
     );
+
     expect(reversed._tag).toBe("Failure");
 
     const malformed = await callTool(1, "list_transactions", {
       cursor: btoa(JSON.stringify({ date: 1 })),
     });
+
     expect(malformed.message).toMatchObject({
       result: {
         content: [{ text: "Invalid request: check the supplied parameters" }],

@@ -12,7 +12,9 @@ export const IsoDateTimeSchema = Schema.String.pipe(
       if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(value)) {
         return false;
       }
+
       const millis = Date.parse(value);
+
       return !Number.isNaN(millis) && new Date(millis).toISOString() === value;
     })
   )
@@ -22,6 +24,7 @@ export const IsoDateTimeSchema = Schema.String.pipe(
 export const ProviderIdSchema = NonEmptyStringSchema.pipe(
   Schema.brand("ProviderId")
 );
+
 /** Stable identifier for a BankGlass provider implementation. */
 export type ProviderId = typeof ProviderIdSchema.Type;
 
@@ -29,6 +32,7 @@ export type ProviderId = typeof ProviderIdSchema.Type;
 export const ConnectionIdSchema = NonEmptyStringSchema.pipe(
   Schema.brand("ConnectionId")
 );
+
 /** Stable identifier for one configured instance of a provider. */
 export type ConnectionId = typeof ConnectionIdSchema.Type;
 
@@ -36,6 +40,7 @@ export type ConnectionId = typeof ConnectionIdSchema.Type;
 export const AccountIdSchema = NonEmptyStringSchema.pipe(
   Schema.brand("AccountId")
 );
+
 /** BankGlass-local identifier for an account. */
 export type AccountId = typeof AccountIdSchema.Type;
 

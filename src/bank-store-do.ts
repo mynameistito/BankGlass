@@ -35,6 +35,7 @@ const syncLeaseSeconds = 5 * 60;
 const migrationEpoch = "1970-01-01T00:00:00.000Z";
 
 type SqlStorage = DurableObjectState["storage"]["sql"];
+
 type SqlRow = Record<string, string | number | null>;
 
 type Reply =
@@ -54,11 +55,14 @@ const CommandSchema = Schema.Struct({
   args: Schema.Array(Schema.Unknown),
   name: Schema.String,
 });
+
 const CursorSchema = Schema.Struct({ date: Schema.String, id: Schema.String });
+
 const AccountQuerySchema = Schema.Struct({
   connectionId: Schema.NullOr(ConnectionIdSchema),
   providerId: Schema.NullOr(ProviderIdSchema),
 });
+
 const TransactionQuerySchema = Schema.Struct({
   accountId: Schema.NullOr(AccountIdSchema),
   connectionId: Schema.NullOr(ConnectionIdSchema),
@@ -69,6 +73,7 @@ const TransactionQuerySchema = Schema.Struct({
   status: Schema.NullOr(Schema.Literals(["posted", "pending"])),
   to: Schema.NullOr(IsoDateTimeSchema),
 });
+
 const ProviderSnapshotSchema = Schema.Struct({
   accounts: Schema.Array(ProviderAccountSchema),
   connectionId: ConnectionIdSchema,
@@ -79,6 +84,7 @@ const ProviderSnapshotSchema = Schema.Struct({
   reconcilePostedFrom: IsoDateTimeSchema,
   syncedAt: IsoDateTimeSchema,
 });
+
 const TransactionPageSchema = Schema.Struct({
   items: Schema.Array(TransactionRecordSchema),
   nextCursor: Schema.NullOr(Schema.String),
@@ -281,23 +287,27 @@ export const migrateBankStoreSchema = (
   now = new Date().toISOString()
 ): void => {
   sql.exec(currentSchemaStatements[0]);
+
   const applied = sql
     .exec<{ version: number }>(
       "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1"
     )
     .toArray()[0]?.version;
+
   if (applied !== undefined && applied >= schemaVersion) {
     return;
   }
 
   const hasLegacyAccounts = tableExists(sql, "accounts");
   const hasCurrentConnections = tableExists(sql, "connections");
+
   if (hasLegacyAccounts && !hasCurrentConnections) {
     migrateLegacySchema(sql, now);
   } else {
     executeCurrentSchema(sql);
     insertDefaultAkahuConnection(sql, now);
   }
+
   sql.exec(
     "INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(?,?)",
     schemaVersion,
@@ -307,13 +317,15 @@ export const migrateBankStoreSchema = (
 
 const rowConnection = (row: SqlRow): BankConnection =>
   Schema.decodeUnknownSync(BankConnectionSchema)({
-    authorization: JSON.parse(String(row["authorizationJson"])),
+    // SAFETY: The database JSON is untrusted; schema decoding validates it before use.
+    authorization: JSON.parse(String(row["authorizationJson"])) as unknown,
     createdAt: row["createdAt"],
     enabled: row["enabled"] === 1,
     id: row["id"],
     label: row["label"],
     lastSyncAt: row["lastSyncAt"],
-    metadata: JSON.parse(String(row["metadataJson"])),
+    // SAFETY: The database JSON is untrusted; schema decoding validates it before use.
+    metadata: JSON.parse(String(row["metadataJson"])) as unknown,
     providerId: row["providerId"],
     updatedAt: row["updatedAt"],
   });
@@ -322,6 +334,7 @@ const connectionSelect = `SELECT
   id,provider_id AS providerId,enabled,label,authorization_json AS authorizationJson,
   metadata_json AS metadataJson,created_at AS createdAt,updated_at AS updatedAt,last_sync_at AS lastSyncAt
   FROM connections`;
+
 const accountSelect = `SELECT
   id,connection_id AS connectionId,provider_id AS providerId,provider_account_id AS providerAccountId,
   institution,name,type,status,currency,current_balance AS currentBalance,available_balance AS availableBalance,
@@ -330,6 +343,7 @@ const accountSelect = `SELECT
   provider_transactions_refreshed_at AS providerTransactionsRefreshedAt,
   data_updated_at AS dataUpdatedAt,synced_at AS syncedAt
   FROM accounts`;
+
 const transactionSelect = `SELECT
   id,connection_id AS connectionId,provider_id AS providerId,
   provider_transaction_id AS providerTransactionId,account_id AS accountId,status,
@@ -338,6 +352,7 @@ const transactionSelect = `SELECT
   other_account AS otherAccount,card_suffix AS cardSuffix,provider_created_at AS providerCreatedAt,
   provider_updated_at AS providerUpdatedAt,data_updated_at AS dataUpdatedAt,synced_at AS syncedAt
   FROM transactions`;
+
 const syncSelect = `SELECT
   connection_id AS connectionId,provider_id AS providerId,status,started_at AS startedAt,
   last_attempt_at AS lastAttemptAt,last_success_at AS lastSuccessAt,
@@ -347,6 +362,7 @@ const syncSelect = `SELECT
 
 const rowAccount = (row: SqlRow): BankAccount =>
   Schema.decodeUnknownSync(BankAccountSchema)(row);
+
 const rowSync = (row: SqlRow): SyncStatus =>
   Schema.decodeUnknownSync(SyncStatusSchema)(row);
 
@@ -357,6 +373,7 @@ const saveConnectionRow = (sql: SqlStorage, connection: BankConnection) => {
       connection.id
     )
     .toArray();
+
   if (existing !== undefined && existing.providerId !== connection.providerId) {
     throw new Error("Connection provider cannot be changed in place");
   }
@@ -399,6 +416,7 @@ const localAccountId = (
       providerAccountId
     )
     .toArray();
+
   return row?.id ?? `account_${crypto.randomUUID()}`;
 };
 
@@ -414,6 +432,7 @@ const localTransactionId = (
       providerTransactionId
     )
     .toArray();
+
   return row?.id ?? `transaction_${crypto.randomUUID()}`;
 };
 
@@ -429,10 +448,13 @@ const accountIdForProviderAccount = (
       providerAccountId
     )
     .toArray();
+
   const id = row?.id;
+
   if (id === undefined) {
     throw new Error("Provider transaction references an unknown account");
   }
+
   return id;
 };
 
@@ -443,11 +465,13 @@ const saveSnapshotRows = (sql: SqlStorage, snapshot: ProviderSnapshot) => {
       snapshot.connectionId
     )
     .toArray();
+
   if (connection?.providerId !== snapshot.providerId) {
     throw new Error(
       "Snapshot provider does not match the configured connection"
     );
   }
+
   const hasLease =
     sql
       .exec(
@@ -456,17 +480,20 @@ const saveSnapshotRows = (sql: SqlStorage, snapshot: ProviderSnapshot) => {
         snapshot.leaseId
       )
       .toArray().length === 1;
+
   if (!hasLease) {
     return { error: "sync", ok: false } as const;
   }
 
   const accountIds = new Map<string, string>();
+
   for (const account of snapshot.accounts) {
     const id = localAccountId(
       sql,
       snapshot.connectionId,
       account.providerAccountId
     );
+
     accountIds.set(account.providerAccountId, id);
     sql.exec(
       `INSERT INTO accounts(
@@ -512,6 +539,7 @@ const saveSnapshotRows = (sql: SqlStorage, snapshot: ProviderSnapshot) => {
       snapshot.connectionId,
       transaction.providerTransactionId
     );
+
     const accountId =
       accountIds.get(transaction.providerAccountId) ??
       accountIdForProviderAccount(
@@ -519,6 +547,7 @@ const saveSnapshotRows = (sql: SqlStorage, snapshot: ProviderSnapshot) => {
         snapshot.connectionId,
         transaction.providerAccountId
       );
+
     const posted = transaction.status === "posted" ? transaction : null;
     sql.exec(
       `INSERT INTO transactions(
@@ -566,6 +595,7 @@ const saveSnapshotRows = (sql: SqlStorage, snapshot: ProviderSnapshot) => {
   for (const transaction of snapshot.posted) {
     upsertTransaction(transaction);
   }
+
   sql.exec(
     `DELETE FROM transactions
      WHERE connection_id=? AND status='posted' AND transaction_at>? AND sync_token<>?`,
@@ -573,15 +603,18 @@ const saveSnapshotRows = (sql: SqlStorage, snapshot: ProviderSnapshot) => {
     snapshot.reconcilePostedFrom,
     snapshot.leaseId
   );
+
   for (const transaction of snapshot.pending) {
     upsertTransaction(transaction);
   }
+
   sql.exec(
     `DELETE FROM transactions
      WHERE connection_id=? AND status='pending' AND sync_token<>?`,
     snapshot.connectionId,
     snapshot.leaseId
   );
+
   return { ok: true } as const;
 };
 
@@ -594,6 +627,7 @@ const reset: CommandHandler = (sql) => {
   sql.exec("DELETE FROM connections");
   sql.exec("DELETE FROM rate_limits");
   insertDefaultAkahuConnection(sql, migrationEpoch);
+
   return { ok: true };
 };
 
@@ -609,9 +643,11 @@ const getConnection: CommandHandler = (sql, args) => {
   const [connectionId] = Schema.decodeUnknownSync(
     Schema.Tuple([ConnectionIdSchema])
   )(args);
+
   const [row] = sql
     .exec<SqlRow>(`${connectionSelect} WHERE id=?`, connectionId)
     .toArray();
+
   return row === undefined
     ? { error: "not-found", ok: false }
     : { ok: true, value: rowConnection(row) };
@@ -621,7 +657,9 @@ const saveConnection: CommandHandler = (sql, args) => {
   const [connection] = Schema.decodeUnknownSync(
     Schema.Tuple([BankConnectionSchema])
   )(args);
+
   saveConnectionRow(sql, connection);
+
   return { ok: true };
 };
 
@@ -629,16 +667,19 @@ const deleteConnection: CommandHandler = (sql, args) => {
   const [connectionId] = Schema.decodeUnknownSync(
     Schema.Tuple([ConnectionIdSchema])
   )(args);
+
   if (
     sql.exec("SELECT 1 FROM connections WHERE id=?", connectionId).toArray()
       .length === 0
   ) {
     return { error: "not-found", ok: false };
   }
+
   sql.exec("DELETE FROM transactions WHERE connection_id=?", connectionId);
   sql.exec("DELETE FROM accounts WHERE connection_id=?", connectionId);
   sql.exec("DELETE FROM sync_state WHERE connection_id=?", connectionId);
   sql.exec("DELETE FROM connections WHERE id=?", connectionId);
+
   return { ok: true };
 };
 
@@ -646,17 +687,22 @@ const listAccounts: CommandHandler = (sql, args) => {
   const [query] = Schema.decodeUnknownSync(Schema.Tuple([AccountQuerySchema]))(
     args
   );
+
   const where: string[] = [];
   const values: unknown[] = [];
+
   if (query.connectionId !== null) {
     where.push("connection_id=?");
     values.push(query.connectionId);
   }
+
   if (query.providerId !== null) {
     where.push("provider_id=?");
     values.push(query.providerId);
   }
+
   const clause = where.length === 0 ? "" : ` WHERE ${where.join(" AND ")}`;
+
   return {
     ok: true,
     value: sql
@@ -669,6 +715,7 @@ const listAccounts: CommandHandler = (sql, args) => {
 const getAccount: CommandHandler = (sql, args) => {
   const [id] = Schema.decodeUnknownSync(Schema.Tuple([AccountIdSchema]))(args);
   const [row] = sql.exec<SqlRow>(`${accountSelect} WHERE id=?`, id).toArray();
+
   return row === undefined
     ? { error: "not-found", ok: false }
     : { ok: true, value: rowAccount(row) };
@@ -678,8 +725,10 @@ const listTransactions: CommandHandler = (sql, args) => {
   const [query] = Schema.decodeUnknownSync(
     Schema.Tuple([TransactionQuerySchema])
   )(args);
+
   const where: string[] = [];
   const values: unknown[] = [];
+
   for (const [value, clause] of [
     [query.accountId, "account_id=?"],
     [query.connectionId, "connection_id=?"],
@@ -693,14 +742,18 @@ const listTransactions: CommandHandler = (sql, args) => {
       values.push(value);
     }
   }
+
   if (query.cursor !== null) {
     const cursor = Schema.decodeUnknownSync(CursorSchema)(
       JSON.parse(atob(query.cursor))
     );
+
     where.push("(transaction_at<? OR (transaction_at=? AND id<?))");
     values.push(cursor.date, cursor.date, cursor.id);
   }
+
   const clause = where.length === 0 ? "" : ` WHERE ${where.join(" AND ")}`;
+
   const rows = sql
     .exec<SqlRow>(
       `${transactionSelect}${clause} ORDER BY transaction_at DESC,id DESC LIMIT ?`,
@@ -708,11 +761,14 @@ const listTransactions: CommandHandler = (sql, args) => {
       query.limit + 1
     )
     .toArray();
+
   const decoded = rows.map((row) =>
     Schema.decodeUnknownSync(TransactionRecordSchema)(row)
   );
+
   const items = decoded.slice(0, query.limit);
   const last = items.at(-1);
+
   const page: TransactionPage = {
     items,
     nextCursor:
@@ -720,6 +776,7 @@ const listTransactions: CommandHandler = (sql, args) => {
         ? btoa(JSON.stringify({ date: last.transactionAt, id: last.id }))
         : null,
   };
+
   return { ok: true, value: page };
 };
 
@@ -727,9 +784,11 @@ const getSyncStatus: CommandHandler = (sql, args) => {
   const [connectionId] = Schema.decodeUnknownSync(
     Schema.Tuple([ConnectionIdSchema])
   )(args);
+
   const [row] = sql
     .exec<SqlRow>(`${syncSelect} WHERE connection_id=?`, connectionId)
     .toArray();
+
   return row === undefined
     ? { error: "not-found", ok: false }
     : { ok: true, value: rowSync(row) };
@@ -753,6 +812,7 @@ const acquireSync: CommandHandler = (sql, args) => {
         Schema.NullOr(IsoDateTimeSchema),
       ])
     )(args);
+
   const result = sql.exec(
     `UPDATE sync_state SET
       status='syncing',started_at=?,last_attempt_at=?,lease_id=?,error_code=NULL,error_message=NULL
@@ -768,6 +828,7 @@ const acquireSync: CommandHandler = (sql, args) => {
     providerRefreshAllowedBefore,
     providerRefreshAllowedBefore
   );
+
   return result.rowsWritten === 1 ? { ok: true } : { error: "sync", ok: false };
 };
 
@@ -777,6 +838,7 @@ const updateLease = (
   args: readonly unknown[]
 ): Reply => {
   const result = sql.exec(query, ...args);
+
   return result.rowsWritten === 1 ? { ok: true } : { error: "sync", ok: false };
 };
 
@@ -784,6 +846,7 @@ const markRefreshRequested: CommandHandler = (sql, args) => {
   const [connectionId, now, leaseId] = Schema.decodeUnknownSync(
     Schema.Tuple([ConnectionIdSchema, IsoDateTimeSchema, Schema.String])
   )(args);
+
   return updateLease(
     sql,
     `UPDATE sync_state SET status='refreshing',last_provider_refresh_requested_at=?
@@ -802,6 +865,7 @@ const completeSync: CommandHandler = (sql, args) => {
         Schema.String,
       ])
     )(args);
+
   const reply = updateLease(
     sql,
     `UPDATE sync_state SET
@@ -810,6 +874,7 @@ const completeSync: CommandHandler = (sql, args) => {
      WHERE connection_id=? AND lease_id=?`,
     [now, providerRefreshedAt, connectionId, leaseId]
   );
+
   if (reply.ok) {
     sql.exec(
       "UPDATE connections SET last_sync_at=? WHERE id=?",
@@ -817,6 +882,7 @@ const completeSync: CommandHandler = (sql, args) => {
       connectionId
     );
   }
+
   return reply;
 };
 
@@ -829,6 +895,7 @@ const failSync: CommandHandler = (sql, args) => {
       Schema.String,
     ])
   )(args);
+
   sql.exec(
     `UPDATE sync_state SET
       status='failed',started_at=NULL,lease_id=NULL,last_attempt_at=?,error_code=?,
@@ -839,6 +906,7 @@ const failSync: CommandHandler = (sql, args) => {
     connectionId,
     leaseId
   );
+
   return { ok: true };
 };
 
@@ -846,6 +914,7 @@ const consumeRateLimit: CommandHandler = (sql, args) => {
   const [bucket, now, limit] = Schema.decodeUnknownSync(
     Schema.Tuple([Schema.String, Schema.Number, Schema.Number])
   )(args);
+
   sql.exec("DELETE FROM rate_limits WHERE expires_at<=?", now);
   const expires = now + 60;
   sql.exec(
@@ -854,12 +923,14 @@ const consumeRateLimit: CommandHandler = (sql, args) => {
     bucket,
     expires
   );
+
   const row = sql
     .exec<{ count: number; expiresAt: number }>(
       "SELECT count,expires_at AS expiresAt FROM rate_limits WHERE bucket=?",
       bucket
     )
     .one();
+
   return row.count > limit
     ? {
         error: "rate",
@@ -873,6 +944,7 @@ const saveSnapshot: CommandHandler = (sql, args) => {
   const [snapshot] = Schema.decodeUnknownSync(
     Schema.Tuple([ProviderSnapshotSchema])
   )(args);
+
   return saveSnapshotRows(sql, snapshot);
 };
 
@@ -911,32 +983,43 @@ export class BankStoreDO extends DurableObject {
   /** Initialize and migrate the SQLite schema before accepting store commands. */
   constructor(ctx: DurableObjectState, env: Cloudflare.Env) {
     super(ctx, env);
-    ctx.blockConcurrencyWhile(() => {
-      ctx.storage.transactionSync(() =>
-        migrateBankStoreSchema(ctx.storage.sql)
-      );
-      return Promise.resolve();
+    void ctx.blockConcurrencyWhile(async () => {
+      await Promise.resolve();
+
+      ctx.storage.transactionSync(() => {
+        migrateBankStoreSchema(ctx.storage.sql);
+      });
     });
   }
 
-  /** Execute one validated store command, transactionally for state-changing operations. */
+  /**
+   * Execute one validated store command, transactionally for state-changing operations.
+   *
+   * @param input - Serialized command name and arguments.
+   * @returns A validated store reply or a typed error reply.
+   */
   command(input: RpcCommand): Reply {
     try {
       const command = Schema.decodeUnknownSync(CommandSchema)(input);
+
       if (!isCommandName(command.name)) {
         throw new Error(`Unknown bank store command: ${command.name}`);
       }
+
       const handler = commandHandlers[command.name];
       const execute = () => handler(this.ctx.storage.sql, command.args);
+
       return transactionalCommands.has(command.name)
         ? this.ctx.storage.transactionSync(execute)
         : execute();
     } catch (error) {
       console.error("bank store command failed", { command: input.name });
+
       const databaseError = new DatabaseError({
         cause: error,
         operation: "command",
       });
+
       return { error: databaseError._tag, ok: false };
     }
   }
@@ -948,7 +1031,12 @@ export interface StoreStub {
   readonly command: BankStoreDO["command"];
 }
 
-/** Determine whether a namespace result exposes the Bank Store RPC method. */
+/**
+ * Determine whether a namespace result exposes the Bank Store RPC method.
+ *
+ * @param value - Namespace lookup result to inspect.
+ * @returns Whether the value exposes the expected RPC method.
+ */
 export const isStoreStub = <T>(value: T): value is T & StoreStub =>
   typeof value === "object" &&
   value !== null &&
@@ -956,6 +1044,7 @@ export const isStoreStub = <T>(value: T): value is T & StoreStub =>
   typeof value.command === "function";
 
 type ExpectedError = ApiRateLimitError | NotFoundError | SyncInProgressError;
+
 type ErrorMapper<E extends ExpectedError> = (cause: unknown) => E | undefined;
 
 const toStoreError = <E extends ExpectedError>(
@@ -964,26 +1053,39 @@ const toStoreError = <E extends ExpectedError>(
   mapExpectedError?: ErrorMapper<E>
 ): DatabaseError | E =>
   mapExpectedError?.(cause) ?? new DatabaseError({ cause, operation });
+
 const preserveApiRateLimit = (cause: unknown) =>
   cause instanceof ApiRateLimitError ? cause : undefined;
+
 const preserveNotFound = (cause: unknown) =>
   cause instanceof NotFoundError ? cause : undefined;
+
 const preserveSyncInProgress = (cause: unknown) =>
   cause instanceof SyncInProgressError ? cause : undefined;
 
+/**
+ * Execute a store command and validate its returned value.
+ *
+ * @param stub - Durable Object RPC stub.
+ * @param name - Command name to execute.
+ * @param args - Serialized command arguments.
+ * @param operation - Operation label for database errors.
+ * @param resultSchema - Schema used to validate the command result.
+ * @returns An effect that executes and validates the command.
+ */
 function run<A>(
   stub: StoreStub,
   name: string,
   args: readonly unknown[],
   operation: string,
-  resultSchema: Schema.Codec<A, unknown, never, never>
+  resultSchema: Schema.Codec<A, unknown>
 ): Effect.Effect<A, DatabaseError>;
 function run<A, E extends ExpectedError>(
   stub: StoreStub,
   name: string,
   args: readonly unknown[],
   operation: string,
-  resultSchema: Schema.Codec<A, unknown, never, never>,
+  resultSchema: Schema.Codec<A, unknown>,
   mapExpectedError: ErrorMapper<E>
 ): Effect.Effect<A, DatabaseError | E>;
 function run<A, E extends ExpectedError>(
@@ -991,27 +1093,32 @@ function run<A, E extends ExpectedError>(
   name: string,
   args: readonly unknown[],
   operation: string,
-  resultSchema: Schema.Codec<A, unknown, never, never>,
+  resultSchema: Schema.Codec<A, unknown>,
   mapExpectedError?: ErrorMapper<E>
 ) {
   return Effect.tryPromise({
     catch: (cause) => toStoreError(cause, operation, mapExpectedError),
     try: async () => {
-      const reply = await stub.command({ args, name });
+      const reply = await Promise.resolve(stub.command({ args, name }));
+
       if (reply.ok) {
         return Schema.decodeUnknownSync(resultSchema)(reply.value);
       }
+
       if (reply.error === "not-found") {
         throw new NotFoundError({ resource: operation });
       }
+
       if (reply.error === "sync") {
         throw new SyncInProgressError({});
       }
+
       if (reply.error === "rate") {
         throw new ApiRateLimitError({
           retryAfterSeconds: reply.retryAfterSeconds ?? 1,
         });
       }
+
       throw new DatabaseError({ cause: reply.error, operation });
     },
   });
@@ -1049,14 +1156,16 @@ function runVoid<E extends ExpectedError>(
  *
  * @param namespace - Durable Object namespace binding from the Worker runtime.
  * @returns A Layer implementing connection-scoped `BankStore` persistence.
- * @throws {TypeError} When the namespace does not expose the expected RPC surface.
  */
 export const doBankStoreLive = (namespace: Cloudflare.Env["BANK_STORE"]) => {
   const candidate = namespace.getByName("bankglass");
+
   if (!isStoreStub(candidate)) {
     throw new TypeError("BANK_STORE does not expose the command RPC");
   }
+
   const stub = candidate;
+
   return Layer.succeed(
     BankStore,
     BankStore.of({

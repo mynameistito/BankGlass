@@ -85,18 +85,22 @@ const failedToolResult = (errorTag: string) => ({
           case "InvalidRequestError": {
             return "Invalid request: check the supplied parameters";
           }
+
           case "NotFoundError": {
             return "Not found: the requested banking record does not exist";
           }
+
           case "ApiRateLimitError":
           case "ProviderRateLimitError": {
             return "Rate limited: retry later";
           }
+
           case "AuthenticationError":
           case "InvalidProviderResponseError":
           case "ProviderUnavailableError": {
             return "Unavailable: banking data is temporarily unavailable; retry later";
           }
+
           default: {
             return "Internal error: banking data could not be read";
           }
@@ -108,10 +112,10 @@ const failedToolResult = (errorTag: string) => ({
   isError: true,
 });
 
-const runTool = <Value, Failure extends { readonly _tag: string }>(
+const runTool = async <Value, Failure extends { readonly _tag: string }>(
   effect: Effect.Effect<Value, Failure>
 ) =>
-  Effect.runPromise(
+  await Effect.runPromise(
     Effect.match(effect, {
       onFailure: (error) => failedToolResult(error._tag),
       onSuccess: successfulToolResult,
@@ -132,6 +136,12 @@ const parseAccountId = (accountId: string) =>
     try: () => Schema.decodeUnknownSync(AccountIdSchema)(accountId),
   });
 
+interface McpTransactionFilters {
+  cursor?: string;
+  from?: string;
+  to?: string;
+}
+
 /**
  * Validate cursor and date ordering for MCP transaction queries.
  *
@@ -140,9 +150,9 @@ const parseAccountId = (accountId: string) =>
  * `InvalidRequestError`.
  */
 export const validateMcpTransactionQuery = (input: {
-  readonly cursor?: string | undefined;
-  readonly from?: string | undefined;
-  readonly to?: string | undefined;
+  readonly cursor?: string;
+  readonly from?: string;
+  readonly to?: string;
 }) =>
   Effect.gen(function* validateMcpQuery() {
     if (
@@ -154,6 +164,7 @@ export const validateMcpTransactionQuery = (input: {
         new InvalidRequestError({ message: "from must not be later than to" })
       );
     }
+
     if (input.cursor !== undefined) {
       yield* validateCursor(input.cursor);
     }
@@ -173,7 +184,10 @@ const createServer = (store: BankStoreService) => {
       inputSchema: z.object({}),
       outputSchema: z.array(accountOutputSchema),
     },
-    () => runTool(store.listAccounts({ connectionId: null, providerId: null }))
+    async () =>
+      await runTool(
+        store.listAccounts({ connectionId: null, providerId: null })
+      )
   );
 
   server.registerTool(
@@ -192,8 +206,8 @@ const createServer = (store: BankStoreService) => {
         syncedAt: z.string(),
       }),
     },
-    ({ accountId }) =>
-      runTool(
+    async ({ accountId }) =>
+      await runTool(
         parseAccountId(accountId).pipe(
           Effect.flatMap((id) => store.getAccount(id)),
           Effect.map((account) => ({
@@ -228,9 +242,23 @@ const createServer = (store: BankStoreService) => {
         nextCursor: z.string().nullable(),
       }),
     },
-    ({ accountId, cursor, from, limit, status, to }) =>
-      runTool(
-        validateMcpTransactionQuery({ cursor, from, to }).pipe(
+    async ({ accountId, cursor, from, limit, status, to }) => {
+      const query: McpTransactionFilters = {};
+
+      if (cursor !== undefined) {
+        query.cursor = cursor;
+      }
+
+      if (from !== undefined) {
+        query.from = from;
+      }
+
+      if (to !== undefined) {
+        query.to = to;
+      }
+
+      return await runTool(
+        validateMcpTransactionQuery(query).pipe(
           Effect.andThen(
             accountId === undefined
               ? Effect.succeed(null)
@@ -249,7 +277,8 @@ const createServer = (store: BankStoreService) => {
             })
           )
         )
-      )
+      );
+    }
   );
 
   server.registerTool(
@@ -261,7 +290,7 @@ const createServer = (store: BankStoreService) => {
       inputSchema: z.object({}),
       outputSchema: z.array(syncStatusOutputSchema),
     },
-    () => runTool(store.listSyncStatuses)
+    async () => await runTool(store.listSyncStatuses)
   );
 
   return server;
@@ -275,7 +304,7 @@ const createServer = (store: BankStoreService) => {
  * @param accessAppHostname - Hostname allowed by the MCP transport.
  * @returns The MCP protocol response with security headers applied.
  */
-export const routeMcpRequest = (
+export const routeMcpRequest = async (
   request: Request,
   store: BankStoreService,
   accessAppHostname: string
@@ -287,11 +316,11 @@ export const routeMcpRequest = (
     responseMode: "auto",
     route: "/mcp",
   });
-  return (async () => {
-    const response = await handler.fetch(request);
-    const securedResponse = new Response(response.body, response);
-    securedResponse.headers.set("Cache-Control", "no-store");
-    securedResponse.headers.set("X-Content-Type-Options", "nosniff");
-    return securedResponse;
-  })();
+
+  const response = await handler.fetch(request);
+  const securedResponse = new Response(response.body, response);
+  securedResponse.headers.set("Cache-Control", "no-store");
+  securedResponse.headers.set("X-Content-Type-Options", "nosniff");
+
+  return securedResponse;
 };

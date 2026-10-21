@@ -11,9 +11,11 @@ import { Config, Effect } from "effect";
 // The deploy action sets STAGE before invoking Alchemy so preview resources
 // receive the same stable names as the action's preview URL matcher.
 const stage = process.env["STAGE"];
-if (!stage) {
+
+if (stage === undefined || stage.length === 0) {
   throw new Error("STAGE must be set explicitly before deploying");
 }
+
 const isProduction = stage === "prod";
 
 /** Alchemy resource definition for the BankGlass Worker and its bindings. */

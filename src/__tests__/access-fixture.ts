@@ -9,9 +9,13 @@ const accessJwks = {
   keys: [{ ...jwk, alg: "RS256", kid: keyId, use: "sig" }],
 };
 
-/** Sign a short-lived test assertion accepted by the configured Access app. */
-export const makeAccessAssertion = () =>
-  new SignJWT({ email: "owner@example.test" })
+/**
+ * Sign a short-lived test assertion accepted by the configured Access app.
+ *
+ * @returns A signed test assertion.
+ */
+export const makeAccessAssertion = async () =>
+  await new SignJWT({ email: "owner@example.test" })
     .setProtectedHeader({ alg: "RS256", kid: keyId })
     .setAudience("REPLACE_WITH_ACCESS_AUD")
     .setIssuer("https://replace-with-team-name.cloudflareaccess.com")
@@ -19,6 +23,10 @@ export const makeAccessAssertion = () =>
     .setExpirationTime("5m")
     .sign(privateKey);
 
-/** Return the test JWKS without making an external request. */
-export const fetchAccessJwks: typeof fetch = () =>
-  Promise.resolve(Response.json(accessJwks));
+/**
+ * Return the test JWKS without making an external request.
+ *
+ * @returns A JSON response containing the test public key.
+ */
+export const fetchAccessJwks: typeof fetch = async () =>
+  await Promise.resolve(Response.json(accessJwks));

@@ -11,6 +11,7 @@ import {
 const connectionId = Schema.decodeUnknownSync(ConnectionIdSchema)(
   "connection_simplefin_test"
 );
+
 const connection: BankConnection = {
   authorization: { _tag: "Connected" },
   createdAt: "2026-09-08T00:00:00.000Z",
@@ -88,23 +89,38 @@ const accountSet = {
   errlist: [],
 } as const;
 
-const provider = (fetchImplementation: typeof fetch) =>
+const provider = (
+  fetchImplementation: (
+    input: RequestInfo | URL,
+    init?: RequestInit
+  ) => Response | Promise<Response>
+) =>
   makeSimpleFinProvider(
     {
       accessUrls: new Map([[connectionId, Redacted.make(accessUrl)]]),
     },
-    fetchImplementation
+    async (input, init) => await fetchImplementation(input, init)
   );
+
+const requestUrl = (input: RequestInfo | URL): string => {
+  if (input instanceof Request) {
+    return input.url;
+  }
+
+  return input instanceof URL ? input.href : input;
+};
 
 describe("SimpleFIN provider boundary", () => {
   it("uses Basic Auth without exposing credentials in the request URL", async () => {
     let capturedUrl = "";
     let capturedAuthorization = "";
+
     const adapter = provider((input, init) => {
-      capturedUrl = String(input);
+      capturedUrl = requestUrl(input);
       capturedAuthorization =
         new Headers(init?.headers).get("Authorization") ?? "";
-      return Promise.resolve(Response.json(accountSet));
+
+      return Response.json(accountSet);
     });
 
     const snapshot = await Effect.runPromise(
@@ -113,6 +129,7 @@ describe("SimpleFIN provider boundary", () => {
         start: "2026-08-25T12:34:56.000Z",
       })
     );
+
     const url = new URL(capturedUrl);
 
     expect({
@@ -139,14 +156,18 @@ describe("SimpleFIN provider boundary", () => {
   });
 
   it("normalizes balances and separates posted from pending transactions", async () => {
-    const adapter = provider(() => Promise.resolve(Response.json(accountSet)));
+    const adapter = provider(
+      async () => await Promise.resolve(Response.json(accountSet))
+    );
 
     const snapshot = await Effect.runPromise(
       adapter.readSnapshot({ connection, start: null })
     );
+
     const everyday = snapshot.accounts.find(
       (account) => account.name === "Everyday"
     );
+
     const savings = snapshot.accounts.find(
       (account) => account.name === "Savings"
     );
@@ -181,7 +202,9 @@ describe("SimpleFIN provider boundary", () => {
   });
 
   it("namespaces duplicate upstream account and transaction IDs", async () => {
-    const adapter = provider(() => Promise.resolve(Response.json(accountSet)));
+    const adapter = provider(
+      async () => await Promise.resolve(Response.json(accountSet))
+    );
 
     const snapshot = await Effect.runPromise(
       adapter.readSnapshot({ connection, start: null })
@@ -198,19 +221,20 @@ describe("SimpleFIN provider boundary", () => {
   });
 
   it("fails closed when the account set reports authentication errors", async () => {
-    const adapter = provider(() =>
-      Promise.resolve(
-        Response.json({
-          ...accountSet,
-          errlist: [
-            {
-              code: "con.auth",
-              conn_id: "bank-a",
-              msg: "credentials expired",
-            },
-          ],
-        })
-      )
+    const adapter = provider(
+      async () =>
+        await Promise.resolve(
+          Response.json({
+            ...accountSet,
+            errlist: [
+              {
+                code: "con.auth",
+                conn_id: "bank-a",
+                msg: "credentials expired",
+              },
+            ],
+          })
+        )
     );
 
     const error = await Effect.runPromise(
@@ -221,19 +245,20 @@ describe("SimpleFIN provider boundary", () => {
   });
 
   it("fails closed for incomplete account data", async () => {
-    const adapter = provider(() =>
-      Promise.resolve(
-        Response.json({
-          ...accountSet,
-          errlist: [
-            {
-              account_id: "shared-account",
-              code: "act.missingdata",
-              msg: "transactions incomplete",
-            },
-          ],
-        })
-      )
+    const adapter = provider(
+      async () =>
+        await Promise.resolve(
+          Response.json({
+            ...accountSet,
+            errlist: [
+              {
+                account_id: "shared-account",
+                code: "act.missingdata",
+                msg: "transactions incomplete",
+              },
+            ],
+          })
+        )
     );
 
     const error = await Effect.runPromise(
@@ -244,18 +269,21 @@ describe("SimpleFIN provider boundary", () => {
   });
 
   it("maps HTTP authentication and rate-limit responses to typed errors", async () => {
-    const unauthorized = provider(() =>
-      Promise.resolve(new Response(null, { status: 403 }))
+    const unauthorized = provider(
+      async () => await Promise.resolve(new Response(null, { status: 403 }))
     );
+
     const authenticationError = await Effect.runPromise(
       Effect.flip(unauthorized.readSnapshot({ connection, start: null }))
     );
 
-    const throttled = provider(() =>
-      Promise.resolve(
-        new Response(null, { headers: { "Retry-After": "30" }, status: 429 })
-      )
+    const throttled = provider(
+      async () =>
+        await Promise.resolve(
+          new Response(null, { headers: { "Retry-After": "30" }, status: 429 })
+        )
     );
+
     const rateLimitError = await Effect.runPromise(
       Effect.flip(throttled.readSnapshot({ connection, start: null }))
     );
@@ -271,15 +299,21 @@ describe("SimpleFIN provider boundary", () => {
 
   it("parses HTTP-date Retry-After responses", async () => {
     const retryAt = new Date(Date.now() + 60_000).toUTCString();
-    const throttled = provider(() =>
-      Promise.resolve(
-        new Response(null, { headers: { "Retry-After": retryAt }, status: 429 })
-      )
+
+    const throttled = provider(
+      async () =>
+        await Promise.resolve(
+          new Response(null, {
+            headers: { "Retry-After": retryAt },
+            status: 429,
+          })
+        )
     );
 
     const error = await Effect.runPromise(
       Effect.flip(throttled.readSnapshot({ connection, start: null }))
     );
+
     const retryAfterSeconds =
       error._tag === "ProviderRateLimitError" ? error.retryAfterSeconds : null;
 
@@ -293,24 +327,25 @@ describe("SimpleFIN provider boundary", () => {
   });
 
   it("rejects empty protocol identifiers without exposing rejected data", async () => {
-    const adapter = provider(() =>
-      Promise.resolve(
-        Response.json({
-          ...accountSet,
-          accounts: [
-            {
-              ...accountSet.accounts[0],
-              transactions: [
-                {
-                  ...accountSet.accounts[0].transactions[0],
-                  description: "private rejected payload",
-                  id: "",
-                },
-              ],
-            },
-          ],
-        })
-      )
+    const adapter = provider(
+      async () =>
+        await Promise.resolve(
+          Response.json({
+            ...accountSet,
+            accounts: [
+              {
+                ...accountSet.accounts[0],
+                transactions: [
+                  {
+                    ...accountSet.accounts[0].transactions[0],
+                    description: "private rejected payload",
+                    id: "",
+                  },
+                ],
+              },
+            ],
+          })
+        )
     );
 
     const error = await Effect.runPromise(
@@ -327,13 +362,14 @@ describe("SimpleFIN provider boundary", () => {
   });
 
   it("rejects duplicate connection identities", async () => {
-    const adapter = provider(() =>
-      Promise.resolve(
-        Response.json({
-          ...accountSet,
-          connections: [...accountSet.connections, accountSet.connections[0]],
-        })
-      )
+    const adapter = provider(
+      async () =>
+        await Promise.resolve(
+          Response.json({
+            ...accountSet,
+            connections: [...accountSet.connections, accountSet.connections[0]],
+          })
+        )
     );
 
     const error = await Effect.runPromise(
@@ -344,13 +380,14 @@ describe("SimpleFIN provider boundary", () => {
   });
 
   it("rejects duplicate account identities", async () => {
-    const adapter = provider(() =>
-      Promise.resolve(
-        Response.json({
-          ...accountSet,
-          accounts: [...accountSet.accounts, accountSet.accounts[0]],
-        })
-      )
+    const adapter = provider(
+      async () =>
+        await Promise.resolve(
+          Response.json({
+            ...accountSet,
+            accounts: [...accountSet.accounts, accountSet.accounts[0]],
+          })
+        )
     );
 
     const error = await Effect.runPromise(
@@ -361,22 +398,23 @@ describe("SimpleFIN provider boundary", () => {
   });
 
   it("rejects duplicate transaction identities", async () => {
-    const adapter = provider(() =>
-      Promise.resolve(
-        Response.json({
-          ...accountSet,
-          accounts: [
-            {
-              ...accountSet.accounts[0],
-              transactions: [
-                ...accountSet.accounts[0].transactions,
-                accountSet.accounts[0].transactions[0],
-              ],
-            },
-            accountSet.accounts[1],
-          ],
-        })
-      )
+    const adapter = provider(
+      async () =>
+        await Promise.resolve(
+          Response.json({
+            ...accountSet,
+            accounts: [
+              {
+                ...accountSet.accounts[0],
+                transactions: [
+                  ...accountSet.accounts[0].transactions,
+                  accountSet.accounts[0].transactions[0],
+                ],
+              },
+              accountSet.accounts[1],
+            ],
+          })
+        )
     );
 
     const error = await Effect.runPromise(
@@ -387,13 +425,14 @@ describe("SimpleFIN provider boundary", () => {
   });
 
   it("rejects malformed numeric strings", async () => {
-    const adapter = provider(() =>
-      Promise.resolve(
-        Response.json({
-          ...accountSet,
-          accounts: [{ ...accountSet.accounts[0], balance: "0x10" }],
-        })
-      )
+    const adapter = provider(
+      async () =>
+        await Promise.resolve(
+          Response.json({
+            ...accountSet,
+            accounts: [{ ...accountSet.accounts[0], balance: "0x10" }],
+          })
+        )
     );
 
     const error = await Effect.runPromise(
@@ -405,12 +444,10 @@ describe("SimpleFIN provider boundary", () => {
 
   it("rejects a zero balance-date while allowing pending posted zero", async () => {
     const adapter = provider(() =>
-      Promise.resolve(
-        Response.json({
-          ...accountSet,
-          accounts: [{ ...accountSet.accounts[0], "balance-date": 0 }],
-        })
-      )
+      Response.json({
+        ...accountSet,
+        accounts: [{ ...accountSet.accounts[0], "balance-date": 0 }],
+      })
     );
 
     const error = await Effect.runPromise(
@@ -421,8 +458,8 @@ describe("SimpleFIN provider boundary", () => {
   });
 
   it("maps HTTP 401 responses to authentication errors", async () => {
-    const adapter = provider(() =>
-      Promise.resolve(new Response(null, { status: 401 }))
+    const adapter = provider(
+      async () => await Promise.resolve(new Response(null, { status: 401 }))
     );
 
     const error = await Effect.runPromise(
@@ -433,18 +470,19 @@ describe("SimpleFIN provider boundary", () => {
   });
 
   it("rejects epoch values outside the JavaScript date range", async () => {
-    const adapter = provider(() =>
-      Promise.resolve(
-        Response.json({
-          ...accountSet,
-          accounts: [
-            {
-              ...accountSet.accounts[0],
-              "balance-date": Number.MAX_VALUE,
-            },
-          ],
-        })
-      )
+    const adapter = provider(
+      async () =>
+        await Promise.resolve(
+          Response.json({
+            ...accountSet,
+            accounts: [
+              {
+                ...accountSet.accounts[0],
+                "balance-date": Number.MAX_VALUE,
+              },
+            ],
+          })
+        )
     );
 
     const error = await Effect.runPromise(

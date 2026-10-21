@@ -10,12 +10,15 @@ import type { SyncServiceService } from "@/sync-service";
 const connectionId = Schema.decodeUnknownSync(ConnectionIdSchema)(
   "connection_scheduled_test"
 );
+
 const deferredConnectionId = Schema.decodeUnknownSync(ConnectionIdSchema)(
   "connection_scheduled_deferred"
 );
+
 const successfulConnectionId = Schema.decodeUnknownSync(ConnectionIdSchema)(
   "connection_scheduled_success"
 );
+
 const providerId = Schema.decodeUnknownSync(ProviderIdSchema)("scheduled");
 
 const failure = (errorTag: string, id = connectionId) => ({
@@ -38,11 +41,12 @@ const successFor = (id = connectionId) => ({
 
 const success = successFor();
 
-const runAfterRetryDelay = (service: SyncServiceService) =>
-  Effect.runPromise(
+const runAfterRetryDelay = async (service: SyncServiceService) =>
+  await Effect.runPromise(
     Effect.gen(function* runScheduled() {
       const fiber = yield* synchronizeScheduled(service).pipe(Effect.forkChild);
       yield* TestClock.adjust("1 minute");
+
       return yield* Fiber.join(fiber);
     }).pipe(Effect.provide(TestClock.layer()))
   );
@@ -50,15 +54,18 @@ const runAfterRetryDelay = (service: SyncServiceService) =>
 describe("scheduled synchronization policy", () => {
   it("does not retry an active-lease deferral", async () => {
     let connectionCalls = 0;
+
     const service: SyncServiceService = {
       synchronizeConnection: () =>
         Effect.sync(() => {
           connectionCalls += 1;
+
           return success;
         }),
       synchronizeEnabled: () =>
         Effect.succeed([failure("SyncInProgressError")]),
     };
+
     const outcomes = await Effect.runPromise(synchronizeScheduled(service));
     expect({ connectionCalls, outcomes }).toStrictEqual({
       connectionCalls: 0,
@@ -68,15 +75,18 @@ describe("scheduled synchronization policy", () => {
 
   it("reads provider cache immediately when the first pass hits refresh cooldown", async () => {
     const refreshModes: string[] = [];
+
     const service: SyncServiceService = {
       synchronizeConnection: ({ refresh }) =>
         Effect.sync(() => {
           refreshModes.push(refresh);
+
           return success;
         }),
       synchronizeEnabled: () =>
         Effect.succeed([failure("RefreshCooldownError")]),
     };
+
     const outcomes = await Effect.runPromise(synchronizeScheduled(service));
     expect({ outcomes, refreshModes }).toStrictEqual({
       outcomes: [success],
@@ -86,10 +96,12 @@ describe("scheduled synchronization policy", () => {
 
   it("retries a failed connection and keeps a successful retry", async () => {
     const refreshModes: string[] = [];
+
     const service: SyncServiceService = {
       synchronizeConnection: ({ refresh }) =>
         Effect.sync(() => {
           refreshModes.push(refresh);
+
           return success;
         }),
       synchronizeEnabled: () =>
@@ -104,9 +116,11 @@ describe("scheduled synchronization policy", () => {
 
   it("falls back to provider cache after a failed refresh retry", async () => {
     const refreshModes: string[] = [];
+
     const service: SyncServiceService = {
       synchronizeConnection: ({ refresh }) => {
         refreshModes.push(refresh);
+
         return refresh === "RequestIfSupported"
           ? Effect.fail(
               new ProviderUnavailableError({
@@ -128,9 +142,11 @@ describe("scheduled synchronization policy", () => {
 
   it("falls back to provider cache when the refresh retry hits cooldown", async () => {
     const refreshModes: string[] = [];
+
     const service: SyncServiceService = {
       synchronizeConnection: ({ refresh }) => {
         refreshModes.push(refresh);
+
         return refresh === "RequestIfSupported"
           ? Effect.fail(
               new RefreshCooldownError({
@@ -155,10 +171,12 @@ describe("scheduled synchronization policy", () => {
     const calls: string[] = [];
     const successful = successFor(successfulConnectionId);
     const deferred = failure("SyncInProgressError", deferredConnectionId);
+
     const service: SyncServiceService = {
       synchronizeConnection: ({ connectionId: id }) =>
         Effect.sync(() => {
           calls.push(id);
+
           return successFor(id);
         }),
       synchronizeEnabled: () =>

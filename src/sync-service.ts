@@ -33,8 +33,11 @@ type SyncError =
   | SyncInProgressError;
 
 type SynchronizeConnection = SyncServiceService["synchronizeConnection"];
+
 type SyncAcquisitionError = DatabaseError | SyncInProgressError;
+
 type SyncCooldownError = NotFoundError | RefreshCooldownError;
+
 type SyncCooldownFailure = SyncAcquisitionError | SyncCooldownError;
 
 type ExplicitRefresh = Extract<
@@ -43,6 +46,7 @@ type ExplicitRefresh = Extract<
 >;
 
 const isPresent = (value: string | null): value is string => value !== null;
+
 const accountFreshness = (account: {
   readonly providerBalanceRefreshedAt: string | null;
   readonly providerTransactionsRefreshedAt: string | null;
@@ -50,6 +54,7 @@ const accountFreshness = (account: {
   account.providerBalanceRefreshedAt,
   account.providerTransactionsRefreshedAt,
 ];
+
 const toIso = (millis: number) => new Date(millis).toISOString();
 const errorTag = (error: SyncError): string => error._tag;
 
@@ -80,13 +85,17 @@ const failWithCooldownWhenApplicable = (
     if (refresh === null || acquisitionError._tag !== "SyncInProgressError") {
       return yield* Effect.fail(acquisitionError);
     }
+
     const status = yield* store.getSyncStatus(connection.id);
+
     if (status.lastProviderRefreshRequestedAt === null) {
       return yield* Effect.fail(acquisitionError);
     }
+
     const retryAtMillis =
       Date.parse(status.lastProviderRefreshRequestedAt) +
       Duration.toMillis(refresh.minimumInterval);
+
     return retryAtMillis > startedMillis
       ? yield* Effect.fail(
           new RefreshCooldownError({ retryAt: toIso(retryAtMillis) })
@@ -128,6 +137,7 @@ const makeSynchronizeConnection = (
       const startedAt = toIso(startedMillis);
       const refresh = explicitRefreshFor(input.refresh, provider);
       const leaseId = crypto.randomUUID();
+
       const acquisition = yield* Effect.result(
         store.acquireSync(
           connection.id,
@@ -136,6 +146,7 @@ const makeSynchronizeConnection = (
           refreshAllowedBefore(startedMillis, refresh)
         )
       );
+
       if (Result.isFailure(acquisition)) {
         return yield* failWithCooldownWhenApplicable(
           store,
@@ -152,6 +163,7 @@ const makeSynchronizeConnection = (
           yield* store.markRefreshRequested(connection.id, startedAt, leaseId);
           yield* Effect.sleep(refresh.propagationDelay);
         }
+
         const start = toIso(startedMillis - lookbackDays * 86_400_000);
         const snapshot = yield* provider.readSnapshot({ connection, start });
         const syncedMillis = yield* Clock.currentTimeMillis;
@@ -171,6 +183,7 @@ const makeSynchronizeConnection = (
           providerRefreshedAt,
           leaseId
         );
+
         return {
           _tag: "Success",
           accounts: snapshot.accounts.length,
@@ -222,6 +235,7 @@ const makeSynchronizeEnabled =
     Effect.gen(function* synchronizeAllEnabled() {
       const connections = yield* store.listConnections;
       const effects: Effect.Effect<ConnectionSyncOutcome>[] = [];
+
       for (const connection of connections) {
         if (connection.enabled) {
           effects.push(
@@ -233,6 +247,7 @@ const makeSynchronizeEnabled =
           );
         }
       }
+
       return yield* Effect.all(effects, { concurrency: 4 });
     });
 
@@ -265,18 +280,26 @@ export const makeSyncService = (lookbackDays: number) =>
   Effect.gen(function* buildSyncService() {
     const registry = yield* ProviderRegistry;
     const store = yield* BankStore;
+
     const synchronizeConnection = makeSynchronizeConnection(
       store,
       registry,
       lookbackDays
     );
+
     const synchronizeEnabled = makeSynchronizeEnabled(
       store,
       synchronizeConnection
     );
+
     return SyncService.of({ synchronizeConnection, synchronizeEnabled });
   });
 
-/** Provide the synchronization application service with its lookback policy. */
+/**
+ * Provide the synchronization application service with its lookback policy.
+ *
+ * @param lookbackDays - Number of historical days included in synchronization.
+ * @returns A layer providing the synchronization service.
+ */
 export const syncServiceLive = (lookbackDays: number) =>
   Layer.effect(SyncService, makeSyncService(lookbackDays));

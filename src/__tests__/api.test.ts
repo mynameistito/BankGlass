@@ -20,6 +20,7 @@ import { routeMcpRequest } from "@/mcp-api";
 import { SyncService } from "@/sync-service";
 
 const headers = { Authorization: "Bearer test-api-bearer-token" };
+
 const config = {
   accessAppHostname: "bank.example.test",
   accessAudience: "REPLACE_WITH_ACCESS_AUD",
@@ -32,33 +33,41 @@ const config = {
   refreshCooldownSeconds: "3600",
   syncLookbackDays: "14",
 } satisfies RuntimeConfig;
+
 const connectionId = Schema.decodeUnknownSync(ConnectionIdSchema)(
   "connection_akahu_default"
 );
+
 const providerId = Schema.decodeUnknownSync(ProviderIdSchema)("akahu");
+
 const secondConnectionId = Schema.decodeUnknownSync(ConnectionIdSchema)(
   "connection_simplefin_status"
 );
+
 const secondProviderId =
   Schema.decodeUnknownSync(ProviderIdSchema)("simplefin");
+
 const providerAccountId = Schema.decodeUnknownSync(ProviderAccountIdSchema)(
   "test"
 );
+
 const resetStore = async () => {
   const stub = env.BANK_STORE.getByName("bankglass");
+
   if (!isStoreStub(stub)) {
     throw new TypeError("BANK_STORE does not expose the command RPC");
   }
-  await stub.command({ args: [], name: "reset" });
+
+  await Promise.resolve(stub.command({ args: [], name: "reset" }));
 };
 
-const getStore = () =>
-  Effect.runPromise(
+const getStore = async () =>
+  await Effect.runPromise(
     BankStore.pipe(Effect.provide(doBankStoreLive(env.BANK_STORE)))
   );
 
-const requestApi = (request: Request) =>
-  Effect.runPromise(
+const requestApi = async (request: Request) =>
+  await Effect.runPromise(
     routeRequest(request, config).pipe(
       Effect.provideService(
         SyncService,
@@ -80,6 +89,7 @@ describe("Cloudflare HTTP boundary", () => {
     const response = await exports.default.fetch(
       new Request("https://example.test/v1/accounts")
     );
+
     expect(response.status).toBe(403);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     await expect(response.json()).resolves.toMatchObject({
@@ -91,6 +101,7 @@ describe("Cloudflare HTTP boundary", () => {
     const response = await requestApi(
       new Request("https://example.test/v1/accounts")
     );
+
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toMatchObject({
       error: { code: "UNAUTHORIZED_API_REQUEST" },
@@ -103,6 +114,7 @@ describe("Cloudflare HTTP boundary", () => {
         headers,
       })
     );
+
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({
       error: {
@@ -118,6 +130,7 @@ describe("Cloudflare HTTP boundary", () => {
         headers,
       })
     );
+
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({
       error: {
@@ -129,6 +142,7 @@ describe("Cloudflare HTTP boundary", () => {
 
   it("returns a stable status array for multiple connections", async () => {
     const store = await getStore();
+
     const secondConnection: BankConnection = {
       authorization: { _tag: "Connected" },
       createdAt: "2026-08-26T00:00:00.000Z",
@@ -140,11 +154,13 @@ describe("Cloudflare HTTP boundary", () => {
       providerId: secondProviderId,
       updatedAt: "2026-08-26T00:00:00.000Z",
     };
+
     await Effect.runPromise(store.saveConnection(secondConnection));
 
     const response = await requestApi(
       new Request("https://example.test/v1/status", { headers })
     );
+
     const body = await response.json();
 
     expect({ body, responseStatus: response.status }).toMatchObject({
@@ -192,18 +208,22 @@ describe("Cloudflare HTTP boundary", () => {
         syncedAt: time,
       })
     );
+
     const [storedAccount] = await Effect.runPromise(
       store.listAccounts({ connectionId, providerId: null })
     );
+
     if (storedAccount === undefined) {
       throw new TypeError("Expected seeded account");
     }
+
     const response = await requestApi(
       new Request(
         `https://example.test/v1/accounts/${encodeURIComponent(storedAccount.id)}/balance`,
         { headers }
       )
     );
+
     const responseBody = await response.text();
     expect(response.status).toBe(200);
     expect(JSON.parse(responseBody)).toMatchObject({
@@ -230,20 +250,26 @@ describe("Cloudflare HTTP boundary", () => {
       },
       method: "POST",
     });
+
     const response = await Effect.runPromise(
       Effect.gen(function* mcpRequest() {
         const store = yield* BankStore;
-        return yield* Effect.promise(() =>
-          routeMcpRequest(request, store, config.accessAppHostname)
+
+        return yield* Effect.promise(
+          async () =>
+            await routeMcpRequest(request, store, config.accessAppHostname)
         );
       }).pipe(Effect.provide(doBankStoreLive(env.BANK_STORE)))
     );
+
     const responseBody = await response.text();
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
+
     const messageLine = responseBody
       .split("\n")
       .find((line) => line.startsWith("data: "));
+
     expect(JSON.parse(messageLine?.slice(6) ?? "{}")).toMatchObject({
       id: 1,
       result: {
@@ -254,28 +280,33 @@ describe("Cloudflare HTTP boundary", () => {
 
   it("rate-limits MCP requests at the Worker entrypoint", async () => {
     const assertion = await makeAccessAssertion();
+
     const fetchJwks = vi
       .spyOn(globalThis, "fetch")
       .mockImplementation(fetchAccessJwks);
+
     try {
-      const requests = Array.from({ length: 61 }, () =>
-        exports.default.fetch(
-          new Request("https://replace-with-custom-hostname/mcp", {
-            body: JSON.stringify({
-              id: 1,
-              jsonrpc: "2.0",
-              method: "tools/list",
-            }),
-            headers: {
-              Accept: "application/json, text/event-stream",
-              "Cf-Access-Jwt-Assertion": assertion,
-              "Content-Type": "application/json",
-              Host: "replace-with-custom-hostname",
-            },
-            method: "POST",
-          })
-        )
+      const requests = Array.from(
+        { length: 61 },
+        async () =>
+          await exports.default.fetch(
+            new Request("https://replace-with-custom-hostname/mcp", {
+              body: JSON.stringify({
+                id: 1,
+                jsonrpc: "2.0",
+                method: "tools/list",
+              }),
+              headers: {
+                Accept: "application/json, text/event-stream",
+                "Cf-Access-Jwt-Assertion": assertion,
+                "Content-Type": "application/json",
+                Host: "replace-with-custom-hostname",
+              },
+              method: "POST",
+            })
+          )
       );
+
       const responses = await Promise.all(requests);
       const limited = responses.find((response) => response.status === 429);
       expect(limited?.status).toBe(429);

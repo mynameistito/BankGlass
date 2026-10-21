@@ -1,4 +1,4 @@
-import { env } from "cloudflare:test";
+import { env } from "cloudflare:workers";
 import { Effect, Schema } from "effect";
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -17,17 +17,22 @@ import type { ProviderPostedTransaction } from "@/domain/transaction";
 const time = "2026-08-26T00:00:00.000Z";
 const later = "2026-08-26T00:01:00.000Z";
 const akahuProviderId = Schema.decodeUnknownSync(ProviderIdSchema)("akahu");
+
 const simplefinProviderId =
   Schema.decodeUnknownSync(ProviderIdSchema)("simplefin");
+
 const akahuConnectionId = Schema.decodeUnknownSync(ConnectionIdSchema)(
   "connection_akahu_default"
 );
+
 const simplefinConnectionId = Schema.decodeUnknownSync(ConnectionIdSchema)(
   "connection_simplefin_test"
 );
+
 const sharedAccountId = Schema.decodeUnknownSync(ProviderAccountIdSchema)(
   "shared-account"
 );
+
 const sharedTransactionId = Schema.decodeUnknownSync(
   ProviderTransactionIdSchema
 )("shared-transaction");
@@ -104,17 +109,19 @@ const simplefinConnection: BankConnection = {
   updatedAt: time,
 };
 
-const getStore = () =>
-  Effect.runPromise(
+const getStore = async () =>
+  await Effect.runPromise(
     BankStore.pipe(Effect.provide(doBankStoreLive(env.BANK_STORE)))
   );
 
 const resetStore = async () => {
   const stub = env.BANK_STORE.getByName("bankglass");
+
   if (!isStoreStub(stub)) {
     throw new TypeError("BANK_STORE does not expose the command RPC");
   }
-  await stub.command({ args: [], name: "reset" });
+
+  await Promise.resolve(stub.command({ args: [], name: "reset" }));
 };
 
 const transactionQuery = (status: "posted" | "pending" | null = null) => ({
@@ -130,9 +137,11 @@ const transactionQuery = (status: "posted" | "pending" | null = null) => ({
 
 const firstOrThrow = <T>(items: readonly T[], message: string): T => {
   const [item] = items;
+
   if (item === undefined) {
     throw new TypeError(message);
   }
+
   return item;
 };
 
@@ -144,6 +153,7 @@ describe("Durable Object banking persistence", () => {
     await Effect.runPromise(
       store.acquireSync(akahuConnectionId, time, "lease", null)
     );
+
     const snapshot = {
       accounts: [account()],
       connectionId: akahuConnectionId,
@@ -156,28 +166,37 @@ describe("Durable Object banking persistence", () => {
     };
 
     await Effect.runPromise(store.saveSnapshot(snapshot));
+
     const firstAccounts = await Effect.runPromise(
       store.listAccounts({ connectionId: null, providerId: null })
     );
+
     const firstTransactions = await Effect.runPromise(
       store.listTransactions(transactionQuery("posted"))
     );
+
     await Effect.runPromise(store.saveSnapshot(snapshot));
+
     const secondAccounts = await Effect.runPromise(
       store.listAccounts({ connectionId: null, providerId: null })
     );
+
     const secondTransactions = await Effect.runPromise(
       store.listTransactions(transactionQuery("posted"))
     );
+
     const firstAccount = firstOrThrow(firstAccounts, "Expected first account");
+
     const secondAccount = firstOrThrow(
       secondAccounts,
       "Expected second account"
     );
+
     const firstTransaction = firstOrThrow(
       firstTransactions.items,
       "Expected first transaction"
     );
+
     const secondTransaction = firstOrThrow(
       secondTransactions.items,
       "Expected second transaction"
@@ -238,9 +257,11 @@ describe("Durable Object banking persistence", () => {
     const accounts = await Effect.runPromise(
       store.listAccounts({ connectionId: null, providerId: null })
     );
+
     const transactions = await Effect.runPromise(
       store.listTransactions(transactionQuery("posted"))
     );
+
     expect(accounts).toHaveLength(2);
     expect(new Set(accounts.map((item) => item.id)).size).toBe(2);
     expect(transactions.items).toHaveLength(2);
@@ -302,6 +323,7 @@ describe("Durable Object banking persistence", () => {
     const remaining = await Effect.runPromise(
       store.listTransactions(transactionQuery())
     );
+
     expect(remaining.items).toHaveLength(2);
     expect(
       remaining.items.every(
@@ -321,11 +343,13 @@ describe("Durable Object banking persistence", () => {
         store.acquireSync(simplefinConnectionId, time, "simplefin-lease", null)
       )
     ).resolves.toBeUndefined();
+
     const error = await Effect.runPromise(
       Effect.flip(
         store.acquireSync(akahuConnectionId, time, "second-akahu", null)
       )
     );
+
     expect(error._tag).toBe("SyncInProgressError");
   });
 
@@ -353,6 +377,7 @@ describe("Durable Object banking persistence", () => {
         })
       )
     );
+
     const accounts = await Effect.runPromise(
       store.listAccounts({
         connectionId: simplefinConnectionId,
@@ -386,6 +411,7 @@ describe("Durable Object banking persistence", () => {
         })
       )
     );
+
     const accounts = await Effect.runPromise(
       store.listAccounts({ connectionId: akahuConnectionId, providerId: null })
     );
@@ -399,6 +425,7 @@ describe("Durable Object banking persistence", () => {
   it("does not allow a connection ID to change provider", async () => {
     const store = await getStore();
     await Effect.runPromise(store.saveConnection(simplefinConnection));
+
     const error = await Effect.runPromise(
       Effect.flip(
         store.saveConnection({
@@ -408,6 +435,7 @@ describe("Durable Object banking persistence", () => {
         })
       )
     );
+
     const persisted = await Effect.runPromise(
       store.getConnection(simplefinConnectionId)
     );
@@ -438,9 +466,11 @@ describe("Durable Object banking persistence", () => {
         syncedAt: time,
       })
     );
+
     const transactions = await Effect.runPromise(
       store.listTransactions(transactionQuery("posted"))
     );
+
     const transaction = firstOrThrow(
       transactions.items,
       "Expected transaction without currency"
@@ -470,9 +500,11 @@ describe("Durable Object banking persistence", () => {
     const akahu = await Effect.runPromise(
       store.getSyncStatus(akahuConnectionId)
     );
+
     const simplefin = await Effect.runPromise(
       store.getSyncStatus(simplefinConnectionId)
     );
+
     expect(akahu.status).toBe("failed");
     expect(simplefin.status).toBe("syncing");
     expect(simplefin.errorCode).toBeNull();
@@ -481,9 +513,11 @@ describe("Durable Object banking persistence", () => {
   it("enforces request rate limits", async () => {
     const store = await getStore();
     await Effect.runPromise(store.consumeRateLimit("test", 100, 1));
+
     const error = await Effect.runPromise(
       Effect.flip(store.consumeRateLimit("test", 100, 1))
     );
+
     expect(error._tag).toBe("ApiRateLimitError");
   });
 });

@@ -91,17 +91,21 @@ export class ProviderRegistry extends Context.Service<
 const makeProviderRegistry = (providers: readonly BankProviderAdapter[]) =>
   Effect.gen(function* buildProviderRegistry() {
     const byId = new Map<ProviderId, BankProviderAdapter>();
+
     for (const provider of providers) {
       if (byId.has(provider.id)) {
         return yield* Effect.fail(
           new DuplicateProviderRegistrationError({ providerId: provider.id })
         );
       }
+
       byId.set(provider.id, provider);
     }
+
     return ProviderRegistry.of({
       get: (providerId) => {
         const provider = byId.get(providerId);
+
         return provider === undefined
           ? Effect.fail(new ProviderNotRegisteredError({ providerId }))
           : Effect.succeed(provider);
@@ -110,7 +114,12 @@ const makeProviderRegistry = (providers: readonly BankProviderAdapter[]) =>
     });
   });
 
-/** Provide a validated provider registry as an Effect layer. */
+/**
+ * Provide a validated provider registry as an Effect layer.
+ *
+ * @param providers - Provider adapters to validate and register.
+ * @returns A layer providing the provider registry.
+ */
 export const providerRegistryLayer = (
   providers: readonly BankProviderAdapter[]
 ) => Layer.effect(ProviderRegistry, makeProviderRegistry(providers));
