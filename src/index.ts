@@ -19,6 +19,7 @@ const previewProviderSentinel = "preview-provider-disabled";
 
 const programLayer = (env: WorkerEnv, lookbackDays: number) => {
   const storeLayer = doBankStoreLive(env.BANK_STORE);
+
   const providers =
     env.AKAHU_APP_TOKEN === previewProviderSentinel ||
     env.AKAHU_USER_TOKEN === previewProviderSentinel
@@ -31,11 +32,14 @@ const programLayer = (env: WorkerEnv, lookbackDays: number) => {
             userToken: Redacted.make(env.AKAHU_USER_TOKEN),
           }),
         ];
+
   const registryLayer = providerRegistryLayer(providers);
   const dependencies = Layer.merge(storeLayer, registryLayer);
+
   const synchronization = syncServiceLive(lookbackDays).pipe(
     Layer.provide(dependencies)
   );
+
   return Layer.merge(dependencies, synchronization);
 };
 
@@ -92,17 +96,20 @@ const runMcpRequest = (
 ) =>
   Effect.tryPromise({
     catch: () => new TypeError("MCP request failed"),
-    try: () => routeMcpRequest(request, store, hostname),
+    try: async () => await routeMcpRequest(request, store, hostname),
   });
 
 const run = (request: Request, env: WorkerEnv) =>
   Effect.gen(function* runRequest() {
     const config = yield* parseConfig(env);
+
     return yield* Effect.gen(function* authenticatedRequest() {
       yield* authenticateAccess(request, config);
+
       if (new URL(request.url).pathname === "/mcp") {
         const store = yield* BankStore;
         const nowSeconds = Math.floor(Date.now() / 1000);
+
         return yield* Effect.gen(function* limitedMcpRequest() {
           const rateLimit = yield* Effect.result(
             store.consumeRateLimit(
@@ -111,19 +118,23 @@ const run = (request: Request, env: WorkerEnv) =>
               Number(config.apiRateLimitPerMinute)
             )
           );
+
           if (Result.isFailure(rateLimit)) {
             return rateLimit.failure._tag === "ApiRateLimitError"
               ? rateLimitedResponse(rateLimit.failure.retryAfterSeconds)
               : internalErrorResponse();
           }
+
           const response = yield* Effect.result(
             runMcpRequest(request, store, config.accessAppHostname)
           );
+
           return Result.isSuccess(response)
             ? response.success
             : internalErrorResponse();
         });
       }
+
       return yield* routeRequest(request, config);
     }).pipe(Effect.provide(programLayer(env, Number(config.syncLookbackDays))));
   }).pipe(
@@ -147,11 +158,29 @@ const run = (request: Request, env: WorkerEnv) =>
     )
   );
 
+/**
+ * Provide the Worker entrypoint and inferred environment type.
+ *
+ * @param env - Worker environment bindings and configuration.
+ * @returns The BankGlass Worker entrypoint handlers.
+ */
 export default {
-  /** Handle an authenticated HTTP or MCP request. */
-  fetch: (request: Request, env: WorkerEnv) =>
-    Effect.runPromise(run(request, env)),
-  /** Run the scheduled synchronization across every enabled provider connection. */
+  /**
+   * Handle an authenticated HTTP or MCP request.
+   *
+   * @param request - Incoming HTTP request.
+   * @param env - Worker environment bindings.
+   * @returns The HTTP response.
+   */
+  fetch: async (request: Request, env: WorkerEnv) =>
+    await Effect.runPromise(run(request, env)),
+  /**
+   * Run scheduled synchronization across every enabled provider connection.
+   *
+   * @param _controller - Scheduled event metadata.
+   * @param env - Worker environment bindings.
+   * @param context - Worker execution context.
+   */
   scheduled: (
     _controller: ScheduledController,
     env: WorkerEnv,
@@ -160,16 +189,20 @@ export default {
     const sync = Effect.gen(function* sync() {
       yield* parseConfig(env);
       const service = yield* SyncService;
+
       return yield* synchronizeScheduled(service);
     }).pipe(Effect.provide(programLayer(env, Number(env.SYNC_LOOKBACK_DAYS))));
+
     const completion = Effect.gen(function* scheduledCompletion() {
       const result = yield* Effect.result(sync);
+
       if (Result.isFailure(result)) {
         yield* Effect.logError("Scheduled synchronization failed", {
           errorTag: result.failure._tag,
         });
       }
     });
+
     context.waitUntil(Effect.runPromise(completion));
   },
 } satisfies ExportedHandler<WorkerEnv>;

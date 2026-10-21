@@ -14,15 +14,19 @@ import { makeSyncService } from "@/sync-service";
 const akahuProviderId = Schema.decodeUnknownSync(ProviderIdSchema)("akahu");
 const managedProviderId = Schema.decodeUnknownSync(ProviderIdSchema)("managed");
 const missingProviderId = Schema.decodeUnknownSync(ProviderIdSchema)("missing");
+
 const akahuConnectionId = Schema.decodeUnknownSync(ConnectionIdSchema)(
   "connection_akahu_test"
 );
+
 const managedConnectionId = Schema.decodeUnknownSync(ConnectionIdSchema)(
   "connection_managed_test"
 );
+
 const missingConnectionId = Schema.decodeUnknownSync(ConnectionIdSchema)(
   "connection_missing_test"
 );
+
 const epoch = "1970-01-01T00:00:00.000Z";
 
 const connection = (
@@ -58,11 +62,11 @@ const unusedStore = (): BankStoreService => ({
   saveSnapshot: () => Effect.die("unused"),
 });
 
-const makeService = (
+const makeService = async (
   store: BankStoreService,
   providers: readonly BankProviderAdapter[]
 ) =>
-  Effect.runPromise(
+  await Effect.runPromise(
     makeSyncService(14).pipe(
       Effect.provide(
         Layer.merge(
@@ -77,6 +81,7 @@ describe("connection synchronization policy", () => {
   it("reports an explicit provider refresh cooldown for only that connection", async () => {
     let refreshCalls = 0;
     let failCalls = 0;
+
     const provider: BankProviderAdapter = {
       displayName: "Akahu test",
       id: akahuProviderId,
@@ -93,6 +98,7 @@ describe("connection synchronization policy", () => {
           }),
       },
     };
+
     const store: BankStoreService = {
       ...unusedStore(),
       acquireSync: () => Effect.fail(new SyncInProgressError({})),
@@ -116,6 +122,7 @@ describe("connection synchronization policy", () => {
           status: "idle",
         }),
     };
+
     const service = await makeService(store, [provider]);
 
     const error = await Effect.runPromise(
@@ -135,6 +142,7 @@ describe("connection synchronization policy", () => {
   it("syncs provider-managed freshness without reserving or requesting refresh", async () => {
     let refreshAllowedBefore: string | null | undefined;
     let snapshotWrites = 0;
+
     const provider: BankProviderAdapter = {
       displayName: "Managed provider",
       id: managedProviderId,
@@ -143,10 +151,12 @@ describe("connection synchronization policy", () => {
         Effect.succeed({ accounts: [], pending: [], posted: [] }),
       refresh: { _tag: "ProviderManaged" },
     };
+
     const managedConnection = connection(
       managedConnectionId,
       managedProviderId
     );
+
     const store: BankStoreService = {
       ...unusedStore(),
       acquireSync: (_connectionId, _now, _leaseId, before) =>
@@ -161,6 +171,7 @@ describe("connection synchronization policy", () => {
           snapshotWrites += 1;
         }),
     };
+
     const service = await makeService(store, [provider]);
 
     const result = await Effect.runPromise(
@@ -184,14 +195,17 @@ describe("connection synchronization policy", () => {
         Effect.succeed({ accounts: [], pending: [], posted: [] }),
       refresh: { _tag: "ProviderManaged" },
     };
+
     const managedConnection = connection(
       managedConnectionId,
       managedProviderId
     );
+
     const missingConnection = connection(
       missingConnectionId,
       missingProviderId
     );
+
     const store: BankStoreService = {
       ...unusedStore(),
       acquireSync: () => Effect.void,
@@ -206,6 +220,7 @@ describe("connection synchronization policy", () => {
       listConnections: Effect.succeed([managedConnection, missingConnection]),
       saveSnapshot: () => Effect.void,
     };
+
     const service = await makeService(store, [provider]);
 
     const outcomes = await Effect.runPromise(

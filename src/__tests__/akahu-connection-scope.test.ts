@@ -27,19 +27,32 @@ const scopedConnection: BankConnection = {
   metadata: { akahuConnectionId: " conn_known " },
 };
 
+const requestUrl = (input: RequestInfo | URL): string => {
+  if (input instanceof Request) {
+    return input.url;
+  }
+
+  return input instanceof URL ? input.href : input;
+};
+
 describe("Akahu connection scope", () => {
   it("rejects blank upstream connection IDs before transport", async () => {
     let requestCount = 0;
+
     const adapter = makeAkahuProvider(
       {
         appToken: Redacted.make("app-token"),
         baseUrl: "https://api.akahu.test",
         userToken: Redacted.make("user-token"),
       },
-      () => {
-        requestCount += 1;
-        return Promise.resolve(Response.json({ items: [], success: true }));
-      }
+      async () =>
+        await Promise.resolve(
+          (() => {
+            requestCount += 1;
+
+            return Response.json({ items: [], success: true });
+          })()
+        )
     );
 
     const error = await Effect.runPromise(
@@ -54,29 +67,32 @@ describe("Akahu connection scope", () => {
 
   it("rejects a configured upstream connection with no accounts", async () => {
     let requestCount = 0;
+
     const adapter = makeAkahuProvider(
       {
         appToken: Redacted.make("app-token"),
         baseUrl: "https://api.akahu.test",
         userToken: Redacted.make("user-token"),
       },
-      () => {
-        requestCount += 1;
-        return Promise.resolve(
-          Response.json({
-            items: [
-              {
-                _id: "account_other",
-                connection: { _id: "conn_other", name: "Other Bank" },
-                name: "Other",
-                status: "ACTIVE",
-                type: "CHECKING",
-              },
-            ],
-            success: true,
-          })
-        );
-      }
+      async () =>
+        await Promise.resolve(
+          (() => {
+            requestCount += 1;
+
+            return Response.json({
+              items: [
+                {
+                  _id: "account_other",
+                  connection: { _id: "conn_other", name: "Other Bank" },
+                  name: "Other",
+                  status: "ACTIVE",
+                  type: "CHECKING",
+                },
+              ],
+              success: true,
+            });
+          })()
+        )
     );
 
     const error = await Effect.runPromise(
@@ -98,25 +114,26 @@ describe("Akahu connection scope", () => {
         baseUrl: "https://api.akahu.test",
         userToken: Redacted.make("user-token"),
       },
-      (input) => {
-        const url = String(input);
+      async (input) => {
+        await Promise.resolve();
+        const url = requestUrl(input);
+
         if (url.endsWith("/accounts")) {
-          return Promise.resolve(
-            Response.json({
-              items: [
-                {
-                  _id: "account_known",
-                  connection: { _id: "conn_known", name: "Known Bank" },
-                  name: "Known",
-                  status: "ACTIVE",
-                  type: "CHECKING",
-                },
-              ],
-              success: true,
-            })
-          );
+          return Response.json({
+            items: [
+              {
+                _id: "account_known",
+                connection: { _id: "conn_known", name: "Known Bank" },
+                name: "Known",
+                status: "ACTIVE",
+                type: "CHECKING",
+              },
+            ],
+            success: true,
+          });
         }
-        return Promise.resolve(Response.json({ items: [], success: true }));
+
+        return Response.json({ items: [], success: true });
       }
     );
 

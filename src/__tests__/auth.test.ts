@@ -23,6 +23,7 @@ describe("API authentication", () => {
         authenticate(new Request("https://example.test"), "secret-token")
       )
     );
+
     expect(error._tag).toBe("UnauthorizedApiRequestError");
   });
 });

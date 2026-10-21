@@ -36,6 +36,7 @@ export const ProviderPostedTransactionSchema = Schema.Struct({
   providerCreatedAt: Schema.NullOr(IsoDateTimeSchema),
   status: Schema.Literal("posted"),
 });
+
 /** Posted transaction normalized by a provider before local identity is assigned. */
 export type ProviderPostedTransaction =
   typeof ProviderPostedTransactionSchema.Type;
@@ -45,6 +46,7 @@ export const ProviderPendingTransactionSchema = Schema.Struct({
   ...CommonProviderTransactionFields,
   status: Schema.Literal("pending"),
 });
+
 /** Pending transaction normalized by a provider before local identity is assigned. */
 export type ProviderPendingTransaction =
   typeof ProviderPendingTransactionSchema.Type;
@@ -75,6 +77,7 @@ export const TransactionRecordSchema = Schema.Struct({
   transactionAt: IsoDateTimeSchema,
   type: Schema.String,
 });
+
 /** Posted or pending transaction persisted and exposed by BankGlass. */
 export type TransactionRecord = typeof TransactionRecordSchema.Type;
 

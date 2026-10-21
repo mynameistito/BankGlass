@@ -16,8 +16,8 @@ const validEnv = {
   SYNC_LOOKBACK_DAYS: "14",
 };
 
-const parse = (overrides: Partial<typeof validEnv> = {}) =>
-  Effect.runPromise(parseConfig({ ...validEnv, ...overrides }));
+const parse = async (overrides: Partial<typeof validEnv> = {}) =>
+  await Effect.runPromise(parseConfig({ ...validEnv, ...overrides }));
 
 describe("runtime configuration", () => {
   it("accepts valid credentials and the default Akahu URL", async () => {
@@ -38,7 +38,7 @@ describe("runtime configuration", () => {
     }
   );
 
-  it.each(["not-a-url", `http${"://api.akahu.io/v1"}`])(
+  it.each(["not-a-url", `http://api.akahu.io/v1`])(
     "rejects an invalid Akahu API URL: %s",
     async (url) => {
       await expect(parse({ AKAHU_API_BASE_URL: url })).rejects.toMatchObject({

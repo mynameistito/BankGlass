@@ -28,6 +28,7 @@ export const ProviderAccountSchema = Schema.Struct({
   ...ProviderAccountFields,
   providerAccountId: ProviderAccountIdSchema,
 });
+
 /** Account normalized by a provider before BankGlass assigns local identity. */
 export type ProviderAccount = typeof ProviderAccountSchema.Type;
 
@@ -40,6 +41,7 @@ export const BankAccountSchema = Schema.Struct({
   providerId: ProviderIdSchema,
   syncedAt: IsoDateTimeSchema,
 });
+
 /** Account persisted and exposed by BankGlass. */
 export type BankAccount = typeof BankAccountSchema.Type;
 

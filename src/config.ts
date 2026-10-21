@@ -10,11 +10,13 @@ const PositiveIntegerString = Schema.String.pipe(
     )
   )
 );
+
 const HttpsOrigin = Schema.String.pipe(
   Schema.check(
     Schema.makeFilter((value: string) => {
       try {
         const url = new URL(value);
+
         return url.protocol === "https:" && url.origin === value;
       } catch {
         return false;
@@ -22,11 +24,13 @@ const HttpsOrigin = Schema.String.pipe(
     })
   )
 );
+
 const HttpsApiBaseUrl = Schema.String.pipe(
   Schema.check(
     Schema.makeFilter((value: string) => {
       try {
         const url = new URL(value);
+
         return [
           url.protocol === "https:",
           url.hostname.length > 0,
@@ -41,6 +45,7 @@ const HttpsApiBaseUrl = Schema.String.pipe(
     })
   )
 );
+
 const Hostname = Schema.String.pipe(
   Schema.check(
     Schema.makeFilter(
@@ -51,6 +56,7 @@ const Hostname = Schema.String.pipe(
     )
   )
 );
+
 const RuntimeConfigSchema = Schema.Struct({
   accessAppHostname: Hostname,
   accessAudience: NonEmptyStringSchema,
@@ -63,6 +69,7 @@ const RuntimeConfigSchema = Schema.Struct({
   refreshCooldownSeconds: PositiveIntegerString,
   syncLookbackDays: PositiveIntegerString,
 });
+
 /** Parsed configuration required by the Worker, including sensitive credentials such as API tokens. */
 export type RuntimeConfig = typeof RuntimeConfigSchema.Type;
 

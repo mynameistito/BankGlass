@@ -19,6 +19,7 @@ export const SyncStatusSchema = Schema.Struct({
   startedAt: Schema.NullOr(IsoDateTimeSchema),
   status: Schema.Literals(["idle", "syncing", "refreshing", "failed"]),
 });
+
 /** Synchronization state for one provider connection. */
 export type SyncStatus = typeof SyncStatusSchema.Type;
 

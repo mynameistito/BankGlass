@@ -12,6 +12,7 @@ const NumericString = Schema.String.pipe(
     )
   )
 );
+
 const EpochSeconds = Schema.Number.pipe(
   Schema.check(
     Schema.makeFilter(
@@ -22,6 +23,7 @@ const EpochSeconds = Schema.Number.pipe(
     )
   )
 );
+
 const PositiveEpochSeconds = EpochSeconds.pipe(
   Schema.check(Schema.makeFilter((value: number) => value > 0))
 );
@@ -72,20 +74,25 @@ const hasUniqueIdentities = (
   value: typeof SimpleFinAccountSetBaseSchema.Type
 ) => {
   const connectionIds = new Set<string>();
+
   for (const connection of value.connections) {
     if (connectionIds.has(connection.conn_id)) {
       return false;
     }
+
     connectionIds.add(connection.conn_id);
   }
 
   const accountIds = new Set<string>();
   const transactionIds = new Set<string>();
+
   for (const account of value.accounts) {
     const accountKey = JSON.stringify([account.conn_id, account.id]);
+
     if (accountIds.has(accountKey)) {
       return false;
     }
+
     accountIds.add(accountKey);
 
     for (const transaction of account.transactions ?? []) {
@@ -94,9 +101,11 @@ const hasUniqueIdentities = (
         account.id,
         transaction.id,
       ]);
+
       if (transactionIds.has(transactionKey)) {
         return false;
       }
+
       transactionIds.add(transactionKey);
     }
   }

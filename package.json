@@ -35,30 +35,35 @@
     "knip": "knip",
     "typecheck": "tsc --noEmit",
     "check": "ultracite check",
-    "fix": "ultracite fix"
+    "fix": "ultracite fix",
+    "prepare": "lefthook install"
   },
   "dependencies": {
-    "@modelcontextprotocol/server": "2.0.0",
-    "agents": "^0.22.0",
-    "alchemy": "^2.0.0-beta.75",
-    "effect": "^4.0.0-rc.112",
-    "jose": "^6.2.10",
-    "zod": "^4.5.4"
+    "@modelcontextprotocol/server": "2.3.1",
+    "agents": "^0.29.0",
+    "alchemy": "^2.0.0-beta.83",
+    "effect": "^4.0.5",
+    "jose": "^6.2.13",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.22.0",
-    "@cloudflare/workers-types": "^5.20260831.1",
-    "@effect/platform-bun": "4.0.0-rc.112",
-    "@effect/platform-node": "4.0.0-rc.112",
+    "@cloudflare/vitest-pool-workers": "^0.23.0",
+    "@cloudflare/workers-types": "^5.20261021.1",
+    "@effect/platform-bun": "4.0.5",
+    "@effect/platform-node": "4.0.5",
     "@typescript/native": "npm:typescript@^7.0.2",
     "eslint-plugin-github": "6.1.2",
-    "eslint-plugin-sonarjs": "^4.2.0",
-    "knip": "6.34.0",
-    "oxfmt": "^0.65.0",
-    "oxlint": "^1.80.0",
+    "eslint-plugin-jsdoc": "^65.1.0",
+    "eslint-plugin-sonarjs": "^4.2.2",
+    "eslint-plugin-tsdoc": "^0.5.4",
+    "knip": "6.42.1",
+    "lefthook": "^2.2.2",
+    "oxfmt": "^0.71.0",
+    "oxlint": "^1.86.0",
+    "oxlint-tsgolint": "^7.0.2004",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "ultracite": "7.10.7",
-    "vitest": "^4.1.11"
+    "ultracite": "8.0.1",
+    "vitest": "^5.0.5"
   },
-  "packageManager": "bun@1.4.0"
+  "packageManager": "bun@1.4.3"
 }

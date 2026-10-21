@@ -1,4 +1,5 @@
-import { env, runInDurableObject } from "cloudflare:test";
+import { runInDurableObject } from "cloudflare:test";
+import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 
 import { isStoreStub, migrateBankStoreSchema } from "@/bank-store-do";
@@ -36,12 +37,14 @@ const legacySchema = [
 describe("bank store schema migration", () => {
   it("upgrades the pre-multi-provider Akahu schema without data loss", async () => {
     const stub = env.BANK_STORE.getByName("bankglass");
+
     if (!isStoreStub(stub)) {
       throw new TypeError("BANK_STORE does not expose the command RPC");
     }
 
     await runInDurableObject(stub, (_instance, state) => {
       const { sql } = state.storage;
+
       for (const table of [
         "transactions",
         "accounts",
@@ -52,11 +55,13 @@ describe("bank store schema migration", () => {
       ]) {
         sql.exec(`DROP TABLE IF EXISTS ${table}`);
       }
+
       sql.exec("DROP INDEX IF EXISTS transactions_account_date");
       sql.exec("DROP INDEX IF EXISTS transactions_date");
       sql.exec("DROP INDEX IF EXISTS transactions_source_date");
       sql.exec("DROP INDEX IF EXISTS accounts_source");
       sql.exec("DROP INDEX IF EXISTS connections_provider");
+
       for (const statement of legacySchema) {
         sql.exec(statement);
       }
@@ -103,6 +108,7 @@ describe("bank store schema migration", () => {
           "SELECT id,provider_id AS providerId,last_sync_at AS lastSyncAt FROM connections"
         )
         .one();
+
       const migratedAccount = sql
         .exec<{
           availableBalance: number | null;
@@ -124,6 +130,7 @@ describe("bank store schema migration", () => {
             data_updated_at AS dataUpdatedAt,synced_at AS syncedAt FROM accounts`
         )
         .one();
+
       const migratedTransaction = sql
         .exec<{
           amount: number;
@@ -141,6 +148,7 @@ describe("bank store schema migration", () => {
             data_updated_at AS dataUpdatedAt,synced_at AS syncedAt FROM transactions`
         )
         .one();
+
       const sync = sql
         .exec<{ lastSuccessAt: string | null }>(
           "SELECT last_success_at AS lastSuccessAt FROM sync_state WHERE connection_id='connection_akahu_default'"
@@ -186,17 +194,21 @@ describe("bank store schema migration", () => {
       });
 
       migrateBankStoreSchema(sql, "2026-08-27T00:00:00.000Z");
+
       const accountCount = sql
         .exec<{ count: number }>("SELECT COUNT(*) AS count FROM accounts")
         .one().count;
+
       const transactionCount = sql
         .exec<{ count: number }>("SELECT COUNT(*) AS count FROM transactions")
         .one().count;
+
       const migrationCount = sql
         .exec<{ count: number }>(
           "SELECT COUNT(*) AS count FROM schema_migrations WHERE version=2"
         )
         .one().count;
+
       expect({ accountCount, migrationCount, transactionCount }).toStrictEqual({
         accountCount: 1,
         migrationCount: 1,

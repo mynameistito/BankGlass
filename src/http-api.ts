@@ -12,6 +12,7 @@ import { InvalidRequestError } from "@/errors";
 import { SyncService } from "@/sync-service";
 
 type JsonValue = Parameters<typeof Response.json>[0];
+
 const CursorSchema = Schema.Struct({ date: Schema.String, id: Schema.String });
 
 const securityHeaders = {
@@ -23,22 +24,34 @@ const securityHeaders = {
   "X-Content-Type-Options": "nosniff",
   "X-Frame-Options": "DENY",
 };
-const json = (body: JsonValue, status = 200, extra: HeadersInit = {}) =>
-  Response.json(body, { headers: { ...securityHeaders, ...extra }, status });
+
+const json = (body: JsonValue, status = 200, extra: HeadersInit = {}) => {
+  const headers = new Headers(securityHeaders);
+
+  for (const [key, value] of new Headers(extra).entries()) {
+    headers.set(key, value);
+  }
+
+  return Response.json(body, { headers, status });
+};
+
 const routeNotFound = {
   error: { code: "NOT_FOUND", message: "Route not found" },
 };
+
 const IsoDateTimeSchema = z.iso.datetime({ offset: true });
 
 const parseDate = (value: string | null, name: string) => {
   if (value === null) {
     return null;
   }
+
   if (!IsoDateTimeSchema.safeParse(value).success) {
     throw new InvalidRequestError({
       message: `${name} must be an ISO 8601 date-time`,
     });
   }
+
   return new Date(value).toISOString();
 };
 
@@ -57,19 +70,24 @@ const parseQuery = (
 ): TransactionQuery => {
   const rawLimit = url.searchParams.get("limit") ?? "50";
   const limit = Number(rawLimit);
+
   if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
     throw new InvalidRequestError({
       message: "limit must be an integer from 1 to 200",
     });
   }
+
   const from = parseDate(url.searchParams.get("from"), "from");
   const to = parseDate(url.searchParams.get("to"), "to");
+
   if (from !== null && to !== null && from > to) {
     throw new InvalidRequestError({
       message: "from must not be later than to",
     });
   }
+
   const cursor = url.searchParams.get("cursor");
+
   if (cursor !== null) {
     try {
       Schema.decodeUnknownSync(CursorSchema)(JSON.parse(atob(cursor)));
@@ -77,6 +95,7 @@ const parseQuery = (
       throw new InvalidRequestError({ message: "cursor is invalid" });
     }
   }
+
   return {
     accountId,
     connectionId: null,
@@ -116,10 +135,13 @@ const routeAccountRequest = (
           : new InvalidRequestError({ message: "accountId is invalid" }),
       try: () => parseAccountId(decodeURIComponent(parts[2] ?? "")),
     });
+
     const account = yield* store.getAccount(accountId);
+
     if (request.method === "GET" && parts.length === 3) {
       return json({ data: account });
     }
+
     if (
       request.method === "GET" &&
       parts[3] === "balance" &&
@@ -137,6 +159,7 @@ const routeAccountRequest = (
         },
       });
     }
+
     if (
       request.method === "GET" &&
       parts[3] === "transactions" &&
@@ -144,8 +167,10 @@ const routeAccountRequest = (
     ) {
       const query = yield* decodeQuery(url, accountId, "posted");
       const page = yield* store.listTransactions(query);
+
       return json({ data: page.items, nextCursor: page.nextCursor });
     }
+
     if (
       request.method === "GET" &&
       parts[3] === "pending" &&
@@ -153,8 +178,10 @@ const routeAccountRequest = (
     ) {
       const query = yield* decodeQuery(url, accountId, "pending");
       const page = yield* store.listTransactions(query);
+
       return json({ data: page.items, nextCursor: page.nextCursor });
     }
+
     return json(routeNotFound, 404);
   });
 
@@ -170,9 +197,11 @@ const routeRequestProgram = (request: Request, config: RuntimeConfig) =>
     );
     const url = new URL(request.url);
     const parts = url.pathname.split("/").filter(Boolean);
+
     if (parts[0] !== "v1") {
       return json(routeNotFound, 404);
     }
+
     if (request.method === "GET" && url.pathname === "/v1/accounts") {
       return json({
         data: yield* store.listAccounts({
@@ -181,24 +210,32 @@ const routeRequestProgram = (request: Request, config: RuntimeConfig) =>
         }),
       });
     }
+
     if (request.method === "GET" && url.pathname === "/v1/transactions") {
       const query = yield* decodeQuery(url, null, "posted");
       const page = yield* store.listTransactions(query);
+
       return json({ data: page.items, nextCursor: page.nextCursor });
     }
+
     if (request.method === "GET" && url.pathname === "/v1/status") {
       return json({ data: yield* store.listSyncStatuses });
     }
+
     if (request.method === "POST" && url.pathname === "/v1/refresh") {
       const sync = yield* SyncService;
+
       const result = yield* sync.synchronizeEnabled({
         refresh: "RequestIfSupported",
       });
+
       return json({ data: result }, 202);
     }
+
     if (parts[1] === "accounts" && parts[2] !== undefined) {
       return yield* routeAccountRequest(request, url, parts, store);
     }
+
     return json(routeNotFound, 404);
   });
 
@@ -219,49 +256,66 @@ const handleRequestError = (error: RequestError) => {
       message: "Request could not be completed",
     },
   };
+
   switch (error._tag) {
     case "UnauthorizedApiRequestError": {
       return json(body, 401, { "WWW-Authenticate": "Bearer" });
     }
+
     case "InvalidRequestError": {
       return json(
         {
           error: {
-            code: body.error.code,
+            code: error._tag
+              .replace(/Error$/u, "")
+              .replaceAll(
+                /(?<lower>[a-z])(?<upper>[A-Z])/gu,
+                "$<lower>_$<upper>"
+              )
+              .toUpperCase(),
             message: error.message ?? "Request could not be completed",
           },
         },
         400
       );
     }
+
     case "NotFoundError": {
       return json(body, 404);
     }
+
     case "RefreshCooldownError": {
       return json({ ...body, retryAt: error.retryAt }, 429);
     }
+
     case "ApiRateLimitError": {
       return json(body, 429, {
         "Retry-After": String(error.retryAfterSeconds ?? 0),
       });
     }
+
     case "ProviderRateLimitError": {
       return json(body, 503);
     }
+
     case "SyncInProgressError": {
       return json(body, 409);
     }
+
     case "AuthenticationError": {
       return json(body, 502);
     }
+
     case "InvalidProviderResponseError":
     case "ProviderNotRegisteredError":
     case "ProviderUnavailableError": {
       return json(body, 503);
     }
+
     case "DatabaseError": {
       return json(body, 500);
     }
+
     default: {
       return json(body, 500);
     }
@@ -278,6 +332,7 @@ const handleRequestError = (error: RequestError) => {
 export const routeRequest = (request: Request, config: RuntimeConfig) =>
   Effect.gen(function* routeRequestResult() {
     const result = yield* Effect.result(routeRequestProgram(request, config));
+
     return Result.isSuccess(result)
       ? result.success
       : handleRequestError(result.failure);

@@ -26,6 +26,7 @@ describe("Cloudflare Access authentication", () => {
     const request = new Request("https://bank.example.test/v1/accounts", {
       headers: { "Cf-Access-Jwt-Assertion": await makeAccessAssertion() },
     });
+
     await expect(
       Effect.runPromise(authenticateAccess(request, config, fetchAccessJwks))
     ).resolves.toBeUndefined();
@@ -33,16 +34,20 @@ describe("Cloudflare Access authentication", () => {
 
   it("reuses the JWKS resolver for repeated requests", async () => {
     let fetchCount = 0;
-    const countingFetch: typeof fetch = (...args) => {
+
+    const countingFetch: typeof fetch = async (...args) => {
       fetchCount += 1;
-      return fetchAccessJwks(...args);
+
+      return await fetchAccessJwks(...args);
     };
+
     const assertion = await makeAccessAssertion();
 
     const request = () =>
       new Request("https://bank.example.test/v1/accounts", {
         headers: { "Cf-Access-Jwt-Assertion": assertion },
       });
+
     await expect(
       Effect.runPromise(authenticateAccess(request(), config, countingFetch))
     ).resolves.toBeUndefined();
@@ -55,12 +60,14 @@ describe("Cloudflare Access authentication", () => {
 
   it("rejects missing and invalid assertions as typed failures", async () => {
     const errors = await Promise.all(
-      [null, "not-a-jwt"].map((assertion) => {
+      [null, "not-a-jwt"].map(async (assertion) => {
         const headers = new Headers();
+
         if (assertion !== null) {
           headers.set("Cf-Access-Jwt-Assertion", assertion);
         }
-        return Effect.runPromise(
+
+        return await Effect.runPromise(
           Effect.flip(
             authenticateAccess(
               new Request("https://bank.example.test/v1/accounts", { headers }),
@@ -71,6 +78,7 @@ describe("Cloudflare Access authentication", () => {
         );
       })
     );
+
     expect(errors.map((error) => error._tag)).toStrictEqual([
       "UnauthorizedAccessRequestError",
       "UnauthorizedAccessRequestError",
