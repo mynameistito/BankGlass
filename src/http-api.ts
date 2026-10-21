@@ -246,13 +246,16 @@ interface RequestError {
   readonly retryAt?: string;
 }
 
+const errorCode = (tag: string) =>
+  tag
+    .replace(/Error$/u, "")
+    .replaceAll(/(?<lower>[a-z])(?<upper>[A-Z])/gu, "$<lower>_$<upper>")
+    .toUpperCase();
+
 const handleRequestError = (error: RequestError) => {
   const body: JsonValue = {
     error: {
-      code: error._tag
-        .replace(/Error$/u, "")
-        .replaceAll(/(?<lower>[a-z])(?<upper>[A-Z])/gu, "$<lower>_$<upper>")
-        .toUpperCase(),
+      code: errorCode(error._tag),
       message: "Request could not be completed",
     },
   };
@@ -266,13 +269,7 @@ const handleRequestError = (error: RequestError) => {
       return json(
         {
           error: {
-            code: error._tag
-              .replace(/Error$/u, "")
-              .replaceAll(
-                /(?<lower>[a-z])(?<upper>[A-Z])/gu,
-                "$<lower>_$<upper>"
-              )
-              .toUpperCase(),
+            code: errorCode(error._tag),
             message: error.message ?? "Request could not be completed",
           },
         },

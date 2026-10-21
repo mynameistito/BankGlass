@@ -317,12 +317,10 @@ export const routeMcpRequest = async (
     route: "/mcp",
   });
 
-  return await (async () => {
-    const response = await handler.fetch(request);
-    const securedResponse = new Response(response.body, response);
-    securedResponse.headers.set("Cache-Control", "no-store");
-    securedResponse.headers.set("X-Content-Type-Options", "nosniff");
+  const response = await handler.fetch(request);
+  const securedResponse = new Response(response.body, response);
+  securedResponse.headers.set("Cache-Control", "no-store");
+  securedResponse.headers.set("X-Content-Type-Options", "nosniff");
 
-    return securedResponse;
-  })();
+  return securedResponse;
 };
