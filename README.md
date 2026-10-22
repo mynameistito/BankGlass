@@ -121,7 +121,7 @@ The referenced 1Password item needs these fields. Both local Varlock runs and Gi
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account used for deployment |
 | `AKAHU_APP_TOKEN` | Akahu Personal App ID token |
 | `AKAHU_USER_TOKEN` | Akahu user access token |
-| `API_BEARER_TOKEN` | Authentication for `/v1/*` routes; shared by production and previews |
+| `API_BEARER_TOKEN` | Authentication for `/api/v1/*` routes; shared by production and previews |
 | `ACCESS_APP_HOSTNAME` | Production Access-protected hostname |
 | `ACCESS_POLICY_AUD` | Access application audience used by production and previews |
 | `ACCESS_TEAM_DOMAIN` | Cloudflare Access team domain |
@@ -150,8 +150,8 @@ The included deployment workflow deploys `main` after CI succeeds and creates pr
 
 1. Confirm the custom hostname is covered by Cloudflare Access.
 2. Test interactive and service-token authentication.
-3. Call `POST /v1/refresh` once to seed the Durable Object.
-4. Confirm `GET /v1/status` reports a successful sync.
+3. Call `POST /api/v1/refresh` once to seed the Durable Object.
+4. Confirm `GET /api/v1/status` reports a successful sync.
 
 ## REST API
 
@@ -159,23 +159,23 @@ Every REST request needs both a valid Cloudflare Access identity and `Authorizat
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/v1/accounts` | List cached accounts and balances |
-| `GET` | `/v1/accounts/:accountId` | Get one account |
-| `GET` | `/v1/accounts/:accountId/balance` | Get one balance and its freshness timestamps |
-| `GET` | `/v1/accounts/:accountId/transactions` | List posted transactions for one account |
-| `GET` | `/v1/accounts/:accountId/pending` | List pending transactions for one account |
-| `GET` | `/v1/transactions` | List posted transactions across all accounts |
-| `GET` | `/v1/status` | List refresh and synchronization status for every configured connection |
-| `POST` | `/v1/refresh` | Ask Akahu to refresh, then synchronize its current cache |
+| `GET` | `/api/v1/accounts` | List cached accounts and balances |
+| `GET` | `/api/v1/accounts/:accountId` | Get one account |
+| `GET` | `/api/v1/accounts/:accountId/balance` | Get one balance and its freshness timestamps |
+| `GET` | `/api/v1/accounts/:accountId/transactions` | List posted transactions for one account |
+| `GET` | `/api/v1/accounts/:accountId/pending` | List pending transactions for one account |
+| `GET` | `/api/v1/transactions` | List posted transactions across all accounts |
+| `GET` | `/api/v1/status` | List refresh and synchronization status for every configured connection |
+| `POST` | `/api/v1/refresh` | Ask Akahu to refresh, then synchronize its current cache |
 
-`GET /v1/status` always returns `data` as an array, with one status object per configured connection.
+`GET /api/v1/status` always returns `data` as an array, with one status object per configured connection.
 
 Transaction routes accept `from`, `to`, `limit`, and `cursor`. Dates must be ISO 8601 date-times. `limit` defaults to 50 and may be 1-200. Results use newest-first keyset pagination.
 
 Example for an unattended client:
 
 ```sh
-curl "https://domain.tld/v1/accounts" \
+curl "https://domain.tld/api/v1/accounts" \
   --header "Authorization: Bearer <API_BEARER_TOKEN>" \
   --header "CF-Access-Client-Id: <CF_ACCESS_CLIENT_ID>" \
   --header "CF-Access-Client-Secret: <CF_ACCESS_CLIENT_SECRET>"
@@ -224,7 +224,7 @@ For an unattended client that supports custom transport headers, use a Cloudflar
 }
 ```
 
-Do not send `API_BEARER_TOKEN` to `/mcp`. Managed OAuth uses the `Authorization` header, while the extra REST bearer applies only to `/v1/*`.
+Do not send `API_BEARER_TOKEN` to `/mcp`. Managed OAuth uses the `Authorization` header, while the extra REST bearer applies only to `/api/v1/*`.
 
 ## Data Freshness
 

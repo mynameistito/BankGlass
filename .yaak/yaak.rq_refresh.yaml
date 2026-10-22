@@ -11,4 +11,4 @@ description: ""
 headers: []
 method: POST
 name: Request refresh
-url: ${[ base_url ]}/v1/refresh
+url: ${[ base_url ]}/api/v1/refresh

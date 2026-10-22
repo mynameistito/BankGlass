@@ -198,11 +198,11 @@ const routeRequestProgram = (request: Request, config: RuntimeConfig) =>
     const url = new URL(request.url);
     const parts = url.pathname.split("/").filter(Boolean);
 
-    if (parts[0] !== "v1") {
+    if (parts[0] !== "api" || parts[1] !== "v1") {
       return json(routeNotFound, 404);
     }
 
-    if (request.method === "GET" && url.pathname === "/v1/accounts") {
+    if (request.method === "GET" && url.pathname === "/api/v1/accounts") {
       return json({
         data: yield* store.listAccounts({
           connectionId: null,
@@ -211,18 +211,18 @@ const routeRequestProgram = (request: Request, config: RuntimeConfig) =>
       });
     }
 
-    if (request.method === "GET" && url.pathname === "/v1/transactions") {
+    if (request.method === "GET" && url.pathname === "/api/v1/transactions") {
       const query = yield* decodeQuery(url, null, "posted");
       const page = yield* store.listTransactions(query);
 
       return json({ data: page.items, nextCursor: page.nextCursor });
     }
 
-    if (request.method === "GET" && url.pathname === "/v1/status") {
+    if (request.method === "GET" && url.pathname === "/api/v1/status") {
       return json({ data: yield* store.listSyncStatuses });
     }
 
-    if (request.method === "POST" && url.pathname === "/v1/refresh") {
+    if (request.method === "POST" && url.pathname === "/api/v1/refresh") {
       const sync = yield* SyncService;
 
       const result = yield* sync.synchronizeEnabled({
@@ -232,8 +232,8 @@ const routeRequestProgram = (request: Request, config: RuntimeConfig) =>
       return json({ data: result }, 202);
     }
 
-    if (parts[1] === "accounts" && parts[2] !== undefined) {
-      return yield* routeAccountRequest(request, url, parts, store);
+    if (parts[2] === "accounts" && parts[3] !== undefined) {
+      return yield* routeAccountRequest(request, url, parts.slice(1), store);
     }
 
     return json(routeNotFound, 404);

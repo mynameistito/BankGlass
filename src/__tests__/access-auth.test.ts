@@ -26,7 +26,7 @@ describe("Cloudflare Access authentication", () => {
     await expect(
       Effect.runPromise(
         authenticateAccess(
-          new Request("http://localhost:1337/v1/accounts"),
+          new Request("http://localhost:1337/api/v1/accounts"),
           config,
           fetchAccessJwks,
           true
@@ -39,7 +39,7 @@ describe("Cloudflare Access authentication", () => {
     const result = await Effect.runPromise(
       Effect.flip(
         authenticateAccess(
-          new Request("https://bank.example.test/v1/accounts"),
+          new Request("https://bank.example.test/api/v1/accounts"),
           config,
           fetchAccessJwks,
           true
@@ -51,7 +51,7 @@ describe("Cloudflare Access authentication", () => {
   });
 
   it("accepts a correctly signed assertion with the configured issuer and audience", async () => {
-    const request = new Request("https://bank.example.test/v1/accounts", {
+    const request = new Request("https://bank.example.test/api/v1/accounts", {
       headers: { "Cf-Access-Jwt-Assertion": await makeAccessAssertion() },
     });
 
@@ -72,7 +72,7 @@ describe("Cloudflare Access authentication", () => {
     const assertion = await makeAccessAssertion();
 
     const request = () =>
-      new Request("https://bank.example.test/v1/accounts", {
+      new Request("https://bank.example.test/api/v1/accounts", {
         headers: { "Cf-Access-Jwt-Assertion": assertion },
       });
 
@@ -98,7 +98,9 @@ describe("Cloudflare Access authentication", () => {
         return await Effect.runPromise(
           Effect.flip(
             authenticateAccess(
-              new Request("https://bank.example.test/v1/accounts", { headers }),
+              new Request("https://bank.example.test/api/v1/accounts", {
+                headers,
+              }),
               config,
               fetchAccessJwks
             )
