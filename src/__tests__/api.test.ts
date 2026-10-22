@@ -87,7 +87,7 @@ describe("Cloudflare HTTP boundary", () => {
 
   it("rejects requests that did not pass Cloudflare Access", async () => {
     const response = await exports.default.fetch(
-      new Request("https://example.test/v1/accounts")
+      new Request("https://example.test/api/v1/accounts")
     );
 
     expect(response.status).toBe(403);
@@ -99,7 +99,7 @@ describe("Cloudflare HTTP boundary", () => {
 
   it("retains REST bearer authentication behind Access", async () => {
     const response = await requestApi(
-      new Request("https://example.test/v1/accounts")
+      new Request("https://example.test/api/v1/accounts")
     );
 
     expect(response.status).toBe(401);
@@ -108,9 +108,21 @@ describe("Cloudflare HTTP boundary", () => {
     });
   });
 
+  it("serves the API under /api/v1 and does not retain the old /v1 route", async () => {
+    const [apiResponse, legacyResponse] = await Promise.all([
+      requestApi(
+        new Request("https://example.test/api/v1/accounts", { headers })
+      ),
+      requestApi(new Request("https://example.test/v1/accounts", { headers })),
+    ]);
+
+    expect(apiResponse.status).toBe(200);
+    expect(legacyResponse.status).toBe(404);
+  });
+
   it("returns structured validation errors", async () => {
     const response = await requestApi(
-      new Request("https://example.test/v1/transactions?limit=1000", {
+      new Request("https://example.test/api/v1/transactions?limit=1000", {
         headers,
       })
     );
@@ -126,7 +138,7 @@ describe("Cloudflare HTTP boundary", () => {
 
   it("requires strict ISO 8601 date-times for transaction filters", async () => {
     const response = await requestApi(
-      new Request("https://example.test/v1/transactions?from=2026-08-27", {
+      new Request("https://example.test/api/v1/transactions?from=2026-08-27", {
         headers,
       })
     );
@@ -158,7 +170,7 @@ describe("Cloudflare HTTP boundary", () => {
     await Effect.runPromise(store.saveConnection(secondConnection));
 
     const response = await requestApi(
-      new Request("https://example.test/v1/status", { headers })
+      new Request("https://example.test/api/v1/status", { headers })
     );
 
     const body = await response.json();
@@ -219,7 +231,7 @@ describe("Cloudflare HTTP boundary", () => {
 
     const response = await requestApi(
       new Request(
-        `https://example.test/v1/accounts/${encodeURIComponent(storedAccount.id)}/balance`,
+        `https://example.test/api/v1/accounts/${encodeURIComponent(storedAccount.id)}/balance`,
         { headers }
       )
     );
