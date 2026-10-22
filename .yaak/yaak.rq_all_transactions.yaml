@@ -11,7 +11,7 @@ description: ""
 headers: []
 method: GET
 name: List all posted transactions
-url: ${[ base_url ]}/v1/transactions
+url: ${[ base_url ]}/api/v1/transactions
 urlParameters:
   - enabled: true
     name: limit

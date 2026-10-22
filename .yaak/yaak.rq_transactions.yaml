@@ -11,7 +11,7 @@ description: ""
 headers: []
 method: GET
 name: List account transactions
-url: ${[ base_url ]}/v1/accounts/:account_id/transactions
+url: ${[ base_url ]}/api/v1/accounts/:account_id/transactions
 urlParameters:
   - enabled: true
     name: limit

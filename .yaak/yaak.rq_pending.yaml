@@ -11,7 +11,7 @@ description: ""
 headers: []
 method: GET
 name: List account pending transactions
-url: ${[ base_url ]}/v1/accounts/:account_id/pending
+url: ${[ base_url ]}/api/v1/accounts/:account_id/pending
 urlParameters:
   - enabled: true
     name: limit

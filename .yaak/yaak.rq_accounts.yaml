@@ -11,4 +11,4 @@ description: ""
 headers: []
 method: GET
 name: List accounts
-url: ${[ base_url ]}/v1/accounts
+url: ${[ base_url ]}/api/v1/accounts
