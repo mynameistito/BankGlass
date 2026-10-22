@@ -77,7 +77,7 @@ Bank authentication and consent happen between you, Akahu, and the institution. 
 
 ## Configure Cloudflare Access
 
-Create a Cloudflare Access self-hosted application for the hostname where BankGlass will run. Every route must pass through this Access application.
+Create a Cloudflare Access self-hosted application for the hostname where BankGlass will run. Keep the application protected by default. The machine-readable discovery routes listed below are intentionally public so agents can locate the API; add narrow `Bypass` policies for only those exact paths. Do not bypass `/api/*` or `/mcp`.
 
 Recommended policies:
 
@@ -86,7 +86,17 @@ Recommended policies:
 
 Enable Managed OAuth if interactive MCP clients will connect to the server. Allow only the redirect URIs those clients require.
 
-BankGlass also verifies the Access JWT inside the Worker, including its signature, issuer, and application audience. Once the custom hostname works, keep the production `workers.dev` route disabled so requests cannot bypass the Access application.
+BankGlass also verifies the Access JWT inside the Worker, including its signature, issuer, and application audience, for protected routes. Discovery routes are exempt from Worker Access verification and must also be bypassed in the Cloudflare Access application to be publicly reachable. Once the custom hostname works, keep the production `workers.dev` route disabled so requests cannot bypass the Access application.
+
+Add Cloudflare Access `Bypass` policies (GET/HEAD only at the Worker) for these exact paths, and verify no broader wildcard bypass is present:
+
+- `/llms.txt`
+- `/.well-known/api-catalog`
+- `/openapi.json`
+- `/.well-known/mcp/server-card.json`
+- `/.well-known/oauth-protected-resource`
+
+All other paths, especially `/api/v1/*` and `/mcp`, remain protected by the existing identity and service-auth policies. The Worker accepts only GET and HEAD on discovery routes. Avoid putting secrets, account data, or private deployment information in these public documents.
 
 ## Local Development
 
@@ -156,6 +166,18 @@ The included deployment workflow deploys `main` after CI succeeds and creates pr
 ## REST API
 
 Every REST request needs both a valid Cloudflare Access identity and `Authorization: Bearer <API_BEARER_TOKEN>`.
+
+Public discovery documents describe the interfaces without exposing cached account data:
+
+| Path | Format | Purpose |
+| --- | --- | --- |
+| `/llms.txt` | Plain text | Product context, interface links, and authentication guidance for language models |
+| `/.well-known/api-catalog` | JSON | REST base URL, canonical OpenAPI document, and MCP endpoint |
+| `/openapi.json` | OpenAPI 3.1 JSON | Canonical REST API description |
+| `/.well-known/mcp/server-card.json` | JSON | MCP server identity and Streamable HTTP endpoint |
+| `/.well-known/oauth-protected-resource` | JSON | OAuth protected-resource metadata for the MCP endpoint |
+
+The documents derive URLs from the incoming request origin, so they work on the configured production hostname and preview hosts. The catalog intentionally does not advertise A2A or skill inventory endpoints: BankGlass does not currently implement an A2A agent endpoint or publish reusable skills. Public metadata is cached briefly; protected API responses remain `no-store`.
 
 | Method | Path | Description |
 | --- | --- | --- |

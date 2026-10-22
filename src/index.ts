@@ -5,6 +5,7 @@ import type { WorkerEnv } from "@/alchemy.run";
 import { BankStore } from "@/bank-store";
 import { doBankStoreLive } from "@/bank-store-do";
 import { parseConfig } from "@/config";
+import { routeDiscoveryRequest } from "@/discovery";
 import { routeRequest } from "@/http-api";
 import { routeMcpRequest } from "@/mcp-api";
 import { providerRegistryLayer } from "@/provider-registry";
@@ -115,6 +116,15 @@ const runMcpRequest = (
 
 const run = (request: Request, env: WorkerEnv) =>
   Effect.gen(function* runRequest() {
+    const discoveryResponse = routeDiscoveryRequest(
+      request,
+      env.ACCESS_TEAM_DOMAIN
+    );
+
+    if (discoveryResponse !== null) {
+      return discoveryResponse;
+    }
+
     const config = yield* parseConfig(env);
 
     return yield* Effect.gen(function* authenticatedRequest() {
