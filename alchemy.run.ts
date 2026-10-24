@@ -65,6 +65,7 @@ export const Worker = Effect.gen(function* defineWorker() {
     name: isProduction ? "bankglass" : `bankglass-${stage}`,
     observability: {
       enabled: true,
+      issues: { enabled: true },
       logs: { enabled: true, headSamplingRate: 1, invocationLogs: true },
       redactQueryString: true,
       traces: { enabled: true, headSamplingRate: 0.1 },
