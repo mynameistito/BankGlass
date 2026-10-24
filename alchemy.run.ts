@@ -66,6 +66,7 @@ export const Worker = Effect.gen(function* defineWorker() {
     observability: {
       enabled: true,
       logs: { enabled: true, headSamplingRate: 1, invocationLogs: true },
+      redactQueryString: true,
       traces: { enabled: true, headSamplingRate: 0.1 },
     },
     workersDev: !isProduction,
