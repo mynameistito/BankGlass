@@ -1,11 +1,11 @@
-import { Stack } from "alchemy";
-import type { InferEnv } from "alchemy/Cloudflare";
+import type { InferEnv } from "@alchemy.run/cloudflare";
 import {
   DurableObject as DurableObjectResource,
   Worker as WorkerResource,
   providers,
   state,
-} from "alchemy/Cloudflare";
+} from "@alchemy.run/cloudflare";
+import { Stack } from "alchemy";
 import { Config, Effect } from "effect";
 
 // The deploy action sets STAGE before invoking Alchemy so preview resources
