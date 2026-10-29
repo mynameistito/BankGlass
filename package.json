@@ -29,7 +29,8 @@
   "type": "module",
   "module": "src/index.ts",
   "scripts": {
-    "deploy": "varlock run -- alchemy deploy",
+    "build:worker": "wrangler deploy src/index.ts --dry-run --outdir dist/alchemy-worker --name bankglass --compatibility-date=2026-07-11 --compatibility-flags=nodejs_compat",
+    "deploy": "varlock run -- alchemy deploy --stage \"$STAGE\"",
     "dev": "varlock run -- alchemy dev",
     "audit": "bun audit --ignore=GHSA-vfj7-8cjw-p6xm",
     "test": "vitest run",
@@ -67,7 +68,8 @@
     "oxlint-tsgolint": "^7.0.2004",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "ultracite": "8.0.1",
-    "vitest": "^5.0.5"
+    "vitest": "^5.0.5",
+    "wrangler": "4.152.0"
   },
   "overrides": {
     "@hono/node-server": "1.19.15",

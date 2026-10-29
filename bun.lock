@@ -33,6 +33,7 @@
         "typescript": "npm:@typescript/typescript6@^6.0.2",
         "ultracite": "8.0.1",
         "vitest": "^5.0.5",
+        "wrangler": "4.152.0",
       },
     },
   },

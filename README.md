@@ -152,9 +152,9 @@ $env:STAGE = "prod"
 bun run deploy
 ```
 
-Varlock loads `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` from the item for local deploys as well as CI.
+The deploy script passes `STAGE` to Alchemy as its explicit `--stage`, keeping the stack state stage aligned with the resource names and production settings in `alchemy.run.ts`. Varlock loads `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` from the item for local deploys as well as CI.
 
-For CI, the workflow loads all application and deployment values from this item and uses the same Cloudflare and API bearer credentials for previews and production. It pins the 1Password CLI to version `2.34.1`.
+For CI, the workflow loads all application and deployment values from this item and uses the same Cloudflare and API bearer credentials for previews and production. It pins the 1Password CLI to version `2.34.1`. The CI workflow also builds the Worker bundle with Wrangler in dry-run mode, without deployment credentials, and uploads the `alchemy-worker` artifact consumed by the trusted preview action.
 
 The included deployment workflow deploys `main` after CI succeeds and creates previews for same-repository pull requests. After the first deployment:
 
