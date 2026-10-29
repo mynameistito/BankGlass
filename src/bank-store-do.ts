@@ -404,60 +404,6 @@ const saveConnectionRow = (sql: SqlStorage, connection: BankConnection) => {
   );
 };
 
-const localAccountId = (
-  sql: SqlStorage,
-  connectionId: string,
-  providerAccountId: string
-) => {
-  const [row] = sql
-    .exec<{ id: string }>(
-      "SELECT id FROM accounts WHERE connection_id=? AND provider_account_id=?",
-      connectionId,
-      providerAccountId
-    )
-    .toArray();
-
-  return row?.id ?? `account_${crypto.randomUUID()}`;
-};
-
-const localTransactionId = (
-  sql: SqlStorage,
-  connectionId: string,
-  providerTransactionId: string
-) => {
-  const [row] = sql
-    .exec<{ id: string }>(
-      "SELECT id FROM transactions WHERE connection_id=? AND provider_transaction_id=?",
-      connectionId,
-      providerTransactionId
-    )
-    .toArray();
-
-  return row?.id ?? `transaction_${crypto.randomUUID()}`;
-};
-
-const accountIdForProviderAccount = (
-  sql: SqlStorage,
-  connectionId: string,
-  providerAccountId: string
-) => {
-  const [row] = sql
-    .exec<{ id: string }>(
-      "SELECT id FROM accounts WHERE connection_id=? AND provider_account_id=?",
-      connectionId,
-      providerAccountId
-    )
-    .toArray();
-
-  const id = row?.id;
-
-  if (id === undefined) {
-    throw new Error("Provider transaction references an unknown account");
-  }
-
-  return id;
-};
-
 const saveSnapshotRows = (sql: SqlStorage, snapshot: ProviderSnapshot) => {
   const [connection] = sql
     .exec<{ providerId: string }>(
@@ -485,14 +431,32 @@ const saveSnapshotRows = (sql: SqlStorage, snapshot: ProviderSnapshot) => {
     return { error: "sync", ok: false } as const;
   }
 
-  const accountIds = new Map<string, string>();
+  const accountIds = new Map(
+    sql
+      .exec<{ id: string; providerAccountId: string }>(
+        `SELECT id,provider_account_id AS providerAccountId
+         FROM accounts WHERE connection_id=?`,
+        snapshot.connectionId
+      )
+      .toArray()
+      .map((row) => [row.providerAccountId, row.id])
+  );
+
+  const transactionIds = new Map(
+    sql
+      .exec<{ id: string; providerTransactionId: string }>(
+        `SELECT id,provider_transaction_id AS providerTransactionId
+         FROM transactions WHERE connection_id=?`,
+        snapshot.connectionId
+      )
+      .toArray()
+      .map((row) => [row.providerTransactionId, row.id])
+  );
 
   for (const account of snapshot.accounts) {
-    const id = localAccountId(
-      sql,
-      snapshot.connectionId,
-      account.providerAccountId
-    );
+    const id =
+      accountIds.get(account.providerAccountId) ??
+      `account_${crypto.randomUUID()}`;
 
     accountIds.set(account.providerAccountId, id);
     sql.exec(
@@ -534,19 +498,17 @@ const saveSnapshotRows = (sql: SqlStorage, snapshot: ProviderSnapshot) => {
       | ProviderSnapshot["posted"][number]
       | ProviderSnapshot["pending"][number]
   ) => {
-    const id = localTransactionId(
-      sql,
-      snapshot.connectionId,
-      transaction.providerTransactionId
-    );
+    const id =
+      transactionIds.get(transaction.providerTransactionId) ??
+      `transaction_${crypto.randomUUID()}`;
 
-    const accountId =
-      accountIds.get(transaction.providerAccountId) ??
-      accountIdForProviderAccount(
-        sql,
-        snapshot.connectionId,
-        transaction.providerAccountId
-      );
+    transactionIds.set(transaction.providerTransactionId, id);
+
+    const accountId = accountIds.get(transaction.providerAccountId);
+
+    if (accountId === undefined) {
+      throw new Error("Provider transaction references an unknown account");
+    }
 
     const posted = transaction.status === "posted" ? transaction : null;
     sql.exec(
