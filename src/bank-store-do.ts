@@ -404,6 +404,40 @@ const saveConnectionRow = (sql: SqlStorage, connection: BankConnection) => {
   );
 };
 
+const loadIdentityIds = (
+  sql: SqlStorage,
+  table: "accounts" | "transactions",
+  providerIdColumn: "provider_account_id" | "provider_transaction_id",
+  connectionId: string,
+  providerIds: readonly string[]
+) => {
+  const identityIds = new Map<string, string>();
+  const batchSize = 200;
+
+  for (let offset = 0; offset < providerIds.length; offset += batchSize) {
+    const batch = providerIds.slice(offset, offset + batchSize);
+
+    if (batch.length === 0) {
+      continue;
+    }
+
+    const placeholders = batch.map(() => "?").join(",");
+
+    for (const row of sql
+      .exec<{ id: string; providerId: string }>(
+        `SELECT id,${providerIdColumn} AS providerId FROM ${table}
+         WHERE connection_id=? AND ${providerIdColumn} IN (${placeholders})`,
+        connectionId,
+        ...batch
+      )
+      .toArray()) {
+      identityIds.set(row.providerId, row.id);
+    }
+  }
+
+  return identityIds;
+};
+
 const saveSnapshotRows = (sql: SqlStorage, snapshot: ProviderSnapshot) => {
   const [connection] = sql
     .exec<{ providerId: string }>(
@@ -431,26 +465,39 @@ const saveSnapshotRows = (sql: SqlStorage, snapshot: ProviderSnapshot) => {
     return { error: "sync", ok: false } as const;
   }
 
-  const accountIds = new Map(
-    sql
-      .exec<{ id: string; providerAccountId: string }>(
-        `SELECT id,provider_account_id AS providerAccountId
-         FROM accounts WHERE connection_id=?`,
-        snapshot.connectionId
-      )
-      .toArray()
-      .map((row) => [row.providerAccountId, row.id])
+  const providerAccountIds = [
+    ...new Set([
+      ...snapshot.accounts.map((account) => account.providerAccountId),
+      ...snapshot.posted.map((transaction) => transaction.providerAccountId),
+      ...snapshot.pending.map((transaction) => transaction.providerAccountId),
+    ]),
+  ];
+
+  const accountIds = loadIdentityIds(
+    sql,
+    "accounts",
+    "provider_account_id",
+    snapshot.connectionId,
+    providerAccountIds
   );
 
-  const transactionIds = new Map(
-    sql
-      .exec<{ id: string; providerTransactionId: string }>(
-        `SELECT id,provider_transaction_id AS providerTransactionId
-         FROM transactions WHERE connection_id=?`,
-        snapshot.connectionId
-      )
-      .toArray()
-      .map((row) => [row.providerTransactionId, row.id])
+  const providerTransactionIds = [
+    ...new Set([
+      ...snapshot.posted.map(
+        (transaction) => transaction.providerTransactionId
+      ),
+      ...snapshot.pending.map(
+        (transaction) => transaction.providerTransactionId
+      ),
+    ]),
+  ];
+
+  const transactionIds = loadIdentityIds(
+    sql,
+    "transactions",
+    "provider_transaction_id",
+    snapshot.connectionId,
+    providerTransactionIds
   );
 
   for (const account of snapshot.accounts) {
