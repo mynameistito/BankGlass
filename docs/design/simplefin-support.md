@@ -43,7 +43,7 @@ The architecture guide identifies a credential-vault authority seam as possible 
 
 ### Add, update, revoke, and remove
 
-- **Add:** validate the setup result and Access URL before creating the record; create a new stable `ConnectionId`; store the secret in the credential authority; save non-secret connection metadata; then optionally run an initial sync. A failed step must not leave an enabled connection that cannot resolve its credential.
+- **Add:** validate the setup result and Access URL before creating the record; create a new stable `ConnectionId`; write the credential as a staged vault entry with a short expiry; save the connection as disabled and pending authorization; then promote the vault entry and enable the connection only after the save succeeds. If `saveConnection` fails, delete the staged entry immediately. If deletion cannot be confirmed, its expiry and a reconciliation pass against persisted connections must remove it; retries must be idempotent. This prevents a failed add from leaving a credential indefinitely without a corresponding `BankConnection`.
 - **Update / rotate:** stage and validate the replacement credential, atomically switch the credential reference/version, mark the connection connected, and retain the old secret only as long as needed for rollback. Never overwrite an active credential with an unvalidated value.
 - **Revoke:** allow an operator to revoke access at the SimpleFIN side, then mark the local connection `Revoked` or `ReauthorizationRequired` and disable scheduled sync. A provider 401/403 should mark or surface authorization failure without silently deleting cached data.
 - **Remove:** disable sync first, delete the connection's credential, then delete the connection and only its locally cached records and sync state. Define retryable cleanup behavior so partial failure cannot leave an enabled, credential-bearing orphan. Removal should clearly disclose the local data it deletes.
@@ -60,7 +60,7 @@ Credential reads should be limited to the Worker path that synchronizes the matc
 
 The adapter currently rejects a non-HTTPS Access URL and strips user info from its request URL before sending Basic Auth. That is a sound minimum, but it does not by itself establish safe configurable network access. A user-supplied URL can target an unintended HTTPS host, and default fetch redirect handling deserves an explicit policy.
 
-Before enabling connection setup, validate the URL structure and reject unexpected ports, fragments, query credentials, and malformed user-info. Do not allow redirects for credentialed requests, or validate every redirect target and ensure authorization is never forwarded; rejecting redirects is the simpler safe default. Apply request timeouts and bounded response sizes, and consider an egress/host policy that still permits legitimate SimpleFIN bridges. Do not log the raw URL on parse or fetch failures. Test downgrade, cross-origin redirect, redirect loops, and private or platform-internal destination handling at the transport boundary.
+Before enabling connection setup, require URL validation and an SSRF-safe egress/host policy that blocks private, loopback, link-local, and platform-internal destinations while allowing legitimate SimpleFIN bridges. Define redirect behavior as part of that prerequisite: reject redirects by default, or validate every hop against the same policy and ensure credentials are never forwarded to a different origin. Reject unexpected ports, fragments, query credentials, and malformed user-info. Apply request timeouts and bounded response sizes. Do not log the raw URL on parse or fetch failures. Test downgrade, cross-origin redirect, redirect loops, and private or platform-internal destination handling at the transport boundary.
 
 The adapter presently checks HTTPS, derives Basic Auth from URL user-info, and uses a ten-second timeout by default. The stricter URL and redirect controls above are proposed hardening; they are not a claim about existing behavior.
 
@@ -68,7 +68,7 @@ The adapter presently checks HTTPS, derives Basic Auth from URL user-info, and u
 
 - Preserve the architecture rule that upstream IDs are scoped by `ConnectionId`; identical IDs from two SimpleFIN connections must not collide. Persisted local IDs remain assigned by the store.
 - The adapter currently marks pending transactions available and normalizes them separately from posted transactions. Confirm replacement/reconciliation semantics for SimpleFIN pending entries across syncs, including disappearance, posting, and changed upstream IDs, before promising stable pending history.
-- The adapter currently declares refresh as `ProviderManaged`: synchronization reads the provider's current snapshot and does not request a provider refresh. Communicate freshness as provider-reported snapshot time, not as a guarantee that upstream data is current. Do not imply that the existing Akahu manual refresh route refreshes SimpleFIN.
+- The adapter currently declares refresh as `ProviderManaged`: synchronization reads the provider's current account data and does not request a provider refresh. SimpleFIN supplies a `balance-date` per account, which the adapter normalizes as that account's data recency; do not describe it as one shared provider snapshot timestamp or as a guarantee that upstream data is current. Do not imply that the existing Akahu manual refresh route refreshes SimpleFIN.
 - The sync service already isolates per-connection outcomes and uses connection-scoped leases and persistence. A SimpleFIN authorization, rate-limit, malformed-response, or network failure should fail only that connection's sync, preserve its last good local snapshot, and remain distinguishable in status without exposing provider details or credentials. Confirm scheduled retry behavior is suitable for provider-managed refreshes.
 
 ## API and migration implications
@@ -79,19 +79,19 @@ The store schema already has connection records, authorization state, string met
 
 ## Staged implementation slices
 
-1. **Resolve security and product questions:** choose setup-token handling, credential authority, management authentication, preview isolation, URL/redirect policy, and removal/revocation semantics.
+1. **Resolve security and product questions:** choose setup-token handling, credential authority, management authentication, preview isolation, the supported SimpleFIN bridge hosts, the mandatory SSRF-safe egress and redirect policy, and removal/revocation semantics.
 2. **Build the credential authority seam:** define narrow put/read/rotate/delete operations scoped by connection and environment; add redaction and access controls; prove that application storage and logs never receive secret values.
-3. **Harden and compose the adapter:** enforce URL and redirect policy; inject credentials only for the matching connection; register the bundled adapter behind explicit configuration. Keep it disabled when no SimpleFIN connection is configured.
+3. **Harden and compose the adapter:** enforce URL, SSRF-safe egress, and redirect policy before enabling connection setup; inject credentials only for the matching connection; register the bundled adapter whenever an explicit deployment flag enables SimpleFIN, even when no connections currently exist. With no SimpleFIN connections, synchronization has no work to run, but the provider remains registered so a connection added at runtime can sync without rebuilding the registry.
 4. **Add lifecycle management:** implement protected setup and connection add/update/disable/revoke/remove operations with safe metadata-only responses and recoverable ordering across the store and credential authority.
 5. **Validate sync and deployment behavior:** verify identity scoping, pending reconciliation, freshness reporting, failure isolation, migrations if needed, and production/preview secret separation with representative integration tests.
-6. **Document supported operation:** only after the capability is deployed, update user-facing setup and support claims with exact credential and data-retention behavior.
+6. **Document the supported operation:** only after the capability is deployed, update user-facing setup and support claims with exact credential and data-retention behavior.
 
 ## Open questions
 
 - Should operators redeem SimpleFIN setup tokens outside BankGlass and provide the resulting Access URL, or should a protected setup flow redeem the token? Which approach avoids unnecessarily accepting and retaining a second credential?
 - Which credential authority fits Cloudflare deployment, and how are environment separation, encryption, backup, recovery, rotation, and deletion audited?
 - What authenticates management operations beyond existing Access and bearer-token checks, and can a local administrative workflow avoid a new remotely exposed mutation API?
-- Are SimpleFIN URLs restricted to known bridge hosts, or is arbitrary operator-supplied HTTPS necessary? What redirect behavior do supported bridges require?
+- Which legitimate SimpleFIN bridge hosts should the mandatory SSRF-safe egress policy allow? If any bridge requires redirects, can each hop be validated safely without forwarding credentials across origins?
 - What exact pending-transaction reconciliation guarantees can the SimpleFIN protocol provide when pending items change or become posted?
 - How should status represent provider-managed freshness and persistent authorization failure, and which failures should be retried automatically?
 - Should removing a connection delete all cached account and transaction history immediately, or offer an explicit export/retention step first?
