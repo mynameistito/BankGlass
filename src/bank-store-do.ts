@@ -404,58 +404,38 @@ const saveConnectionRow = (sql: SqlStorage, connection: BankConnection) => {
   );
 };
 
-const localAccountId = (
+const loadIdentityIds = (
   sql: SqlStorage,
+  table: "accounts" | "transactions",
+  providerIdColumn: "provider_account_id" | "provider_transaction_id",
   connectionId: string,
-  providerAccountId: string
+  providerIds: readonly string[]
 ) => {
-  const [row] = sql
-    .exec<{ id: string }>(
-      "SELECT id FROM accounts WHERE connection_id=? AND provider_account_id=?",
-      connectionId,
-      providerAccountId
-    )
-    .toArray();
+  const identityIds = new Map<string, string>();
+  const batchSize = 200;
 
-  return row?.id ?? `account_${crypto.randomUUID()}`;
-};
+  for (let offset = 0; offset < providerIds.length; offset += batchSize) {
+    const batch = providerIds.slice(offset, offset + batchSize);
 
-const localTransactionId = (
-  sql: SqlStorage,
-  connectionId: string,
-  providerTransactionId: string
-) => {
-  const [row] = sql
-    .exec<{ id: string }>(
-      "SELECT id FROM transactions WHERE connection_id=? AND provider_transaction_id=?",
-      connectionId,
-      providerTransactionId
-    )
-    .toArray();
+    if (batch.length === 0) {
+      continue;
+    }
 
-  return row?.id ?? `transaction_${crypto.randomUUID()}`;
-};
+    const placeholders = batch.map(() => "?").join(",");
 
-const accountIdForProviderAccount = (
-  sql: SqlStorage,
-  connectionId: string,
-  providerAccountId: string
-) => {
-  const [row] = sql
-    .exec<{ id: string }>(
-      "SELECT id FROM accounts WHERE connection_id=? AND provider_account_id=?",
-      connectionId,
-      providerAccountId
-    )
-    .toArray();
-
-  const id = row?.id;
-
-  if (id === undefined) {
-    throw new Error("Provider transaction references an unknown account");
+    for (const row of sql
+      .exec<{ id: string; providerId: string }>(
+        `SELECT id,${providerIdColumn} AS providerId FROM ${table}
+         WHERE connection_id=? AND ${providerIdColumn} IN (${placeholders})`,
+        connectionId,
+        ...batch
+      )
+      .toArray()) {
+      identityIds.set(row.providerId, row.id);
+    }
   }
 
-  return id;
+  return identityIds;
 };
 
 const saveSnapshotRows = (sql: SqlStorage, snapshot: ProviderSnapshot) => {
@@ -485,14 +465,45 @@ const saveSnapshotRows = (sql: SqlStorage, snapshot: ProviderSnapshot) => {
     return { error: "sync", ok: false } as const;
   }
 
-  const accountIds = new Map<string, string>();
+  const providerAccountIds = [
+    ...new Set([
+      ...snapshot.accounts.map((account) => account.providerAccountId),
+      ...snapshot.posted.map((transaction) => transaction.providerAccountId),
+      ...snapshot.pending.map((transaction) => transaction.providerAccountId),
+    ]),
+  ];
+
+  const accountIds = loadIdentityIds(
+    sql,
+    "accounts",
+    "provider_account_id",
+    snapshot.connectionId,
+    providerAccountIds
+  );
+
+  const providerTransactionIds = [
+    ...new Set([
+      ...snapshot.posted.map(
+        (transaction) => transaction.providerTransactionId
+      ),
+      ...snapshot.pending.map(
+        (transaction) => transaction.providerTransactionId
+      ),
+    ]),
+  ];
+
+  const transactionIds = loadIdentityIds(
+    sql,
+    "transactions",
+    "provider_transaction_id",
+    snapshot.connectionId,
+    providerTransactionIds
+  );
 
   for (const account of snapshot.accounts) {
-    const id = localAccountId(
-      sql,
-      snapshot.connectionId,
-      account.providerAccountId
-    );
+    const id =
+      accountIds.get(account.providerAccountId) ??
+      `account_${crypto.randomUUID()}`;
 
     accountIds.set(account.providerAccountId, id);
     sql.exec(
@@ -534,19 +545,17 @@ const saveSnapshotRows = (sql: SqlStorage, snapshot: ProviderSnapshot) => {
       | ProviderSnapshot["posted"][number]
       | ProviderSnapshot["pending"][number]
   ) => {
-    const id = localTransactionId(
-      sql,
-      snapshot.connectionId,
-      transaction.providerTransactionId
-    );
+    const id =
+      transactionIds.get(transaction.providerTransactionId) ??
+      `transaction_${crypto.randomUUID()}`;
 
-    const accountId =
-      accountIds.get(transaction.providerAccountId) ??
-      accountIdForProviderAccount(
-        sql,
-        snapshot.connectionId,
-        transaction.providerAccountId
-      );
+    transactionIds.set(transaction.providerTransactionId, id);
+
+    const accountId = accountIds.get(transaction.providerAccountId);
+
+    if (accountId === undefined) {
+      throw new Error("Provider transaction references an unknown account");
+    }
 
     const posted = transaction.status === "posted" ? transaction : null;
     sql.exec(

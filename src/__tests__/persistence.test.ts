@@ -54,7 +54,8 @@ const account = (providerAccountId = sharedAccountId): ProviderAccount => ({
 });
 
 const posted = (
-  providerTransactionId = sharedTransactionId
+  providerTransactionId = sharedTransactionId,
+  providerAccountId = sharedAccountId
 ): ProviderPostedTransaction => ({
   amount: -5,
   balance: 10,
@@ -67,7 +68,7 @@ const posted = (
   merchantName: null,
   otherAccount: null,
   particulars: null,
-  providerAccountId: sharedAccountId,
+  providerAccountId,
   providerCreatedAt: time,
   providerTransactionId,
   providerUpdatedAt: time,
@@ -266,6 +267,72 @@ describe("Durable Object banking persistence", () => {
     expect(new Set(accounts.map((item) => item.id)).size).toBe(2);
     expect(transactions.items).toHaveLength(2);
     expect(new Set(transactions.items.map((item) => item.id)).size).toBe(2);
+
+    for (const transaction of transactions.items) {
+      const matchingAccount = accounts.find(
+        (item) => item.connectionId === transaction.connectionId
+      );
+
+      expect(transaction.accountId).toBe(matchingAccount?.id);
+    }
+  });
+
+  it("assigns unique local IDs to new accounts and transactions", async () => {
+    const store = await getStore();
+
+    const accountOneId = Schema.decodeUnknownSync(ProviderAccountIdSchema)(
+      "account-one"
+    );
+
+    const accountTwoId = Schema.decodeUnknownSync(ProviderAccountIdSchema)(
+      "account-two"
+    );
+
+    const transactionOneId = Schema.decodeUnknownSync(
+      ProviderTransactionIdSchema
+    )("transaction-one");
+
+    const transactionTwoId = Schema.decodeUnknownSync(
+      ProviderTransactionIdSchema
+    )("transaction-two");
+
+    await Effect.runPromise(
+      store.acquireSync(akahuConnectionId, time, "lease", null)
+    );
+    await Effect.runPromise(
+      store.saveSnapshot({
+        accounts: [account(accountOneId), account(accountTwoId)],
+        connectionId: akahuConnectionId,
+        leaseId: "lease",
+        pending: [],
+        posted: [
+          posted(transactionOneId, accountOneId),
+          posted(transactionTwoId, accountTwoId),
+        ],
+        providerId: akahuProviderId,
+        reconcilePostedFrom: time,
+        syncedAt: time,
+      })
+    );
+
+    const accounts = await Effect.runPromise(
+      store.listAccounts({ connectionId: akahuConnectionId, providerId: null })
+    );
+
+    const transactions = await Effect.runPromise(
+      store.listTransactions({
+        ...transactionQuery("posted"),
+        connectionId: akahuConnectionId,
+      })
+    );
+
+    expect(new Set(accounts.map((item) => item.id)).size).toBe(2);
+    expect(new Set(transactions.items.map((item) => item.id)).size).toBe(2);
+    expect(
+      transactions.items.every((item) =>
+        accounts.some((accountItem) => accountItem.id === item.accountId)
+      )
+    ).toBeTruthy();
   });
 
   it("reconciles posted and pending rows only inside the synchronized connection", async () => {
@@ -324,7 +391,9 @@ describe("Durable Object banking persistence", () => {
       store.listTransactions(transactionQuery())
     );
 
-    expect(remaining.items).toHaveLength(2);
+    expect(remaining.items.map((item) => item.status).toSorted()).toStrictEqual(
+      ["pending", "posted"]
+    );
     expect(
       remaining.items.every(
         (item) => item.connectionId === simplefinConnectionId
