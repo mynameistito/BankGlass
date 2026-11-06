@@ -13,9 +13,9 @@ OP_TOKEN=
 STAGE=dev
 
 # @sensitive @required
-AKAHU_APP_TOKEN=op("op://uhub4xx3iwwsaxj3robdosm2hu/zqaspv4bzqoqrfqklsiemgique/eieej6gi2q4m6okzog5rb3ey3y/AKAHU_APP_TOKEN")
+AKAHU_APP_TOKEN=op("op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/2z24lkruqztbaho7uqoqjjsse4")
 # @sensitive @required
-AKAHU_USER_TOKEN=op("op://uhub4xx3iwwsaxj3robdosm2hu/zqaspv4bzqoqrfqklsiemgique/eieej6gi2q4m6okzog5rb3ey3y/AKAHU_USER_TOKEN")
+AKAHU_USER_TOKEN=op("op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/lleillmqnh5ni57dki7edz7wqm")
 # @sensitive @required
 API_BEARER_TOKEN=op("op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/jqjhxjjni6c7nb4iwz2vp7o4hi")
 # @sensitive @required
