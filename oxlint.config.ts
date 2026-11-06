@@ -8,13 +8,7 @@ const jsPlugins = selectJsPlugins(["github", "jsdoc-js", "sonarjs", "tsdoc"]);
 
 export default defineConfig({
   env: core.env,
-  extends: [
-    antiSlop,
-    core,
-    vitest,
-    jsPlugins,
-    selectJsPlugins(["github", "sonarjs"]),
-  ],
+  extends: [antiSlop, core, vitest, jsPlugins],
   ignorePatterns: core.ignorePatterns,
   jsPlugins: jsPlugins.jsPlugins,
   options: { typeAware: true },
