@@ -123,9 +123,6 @@ The `dev` and `deploy` scripts use `varlock run` to resolve and validate values 
 
 BankGlass includes an Alchemy deployment and a GitHub Actions workflow. For a fork, grant its 1Password service account access to the referenced vault, or create equivalent items in its own account and replace the vault and item IDs in each `op()` reference in [`.env.tpl`](.env.tpl). Before local or GitHub deployment, set `ACCESS_APP_HOSTNAME` in the Access item to your own Access-protected production hostname.
 
-> [!CAUTION]
-> Alchemy beta.85 upgrades the Cloudflare state store from v7 to v8 on the next deployment and removes the old state-store management stack. Coordinate the upgrade of every machine and CI job that uses the store before deploying. Do not run beta.84 or older against the upgraded store: doing so risks losing its encryption key. Review Alchemy's [beta.85 upgrade guidance](https://alchemy.run/blog/2026-11-01-beta-85/) and establish a recovery plan before the first deployment. This repository uses the default `state()` configuration, so no custom state-store name needs translating.
-
 The referenced 1Password item needs these fields. Both local Varlock runs and GitHub deployments read their configuration from it:
 
 | 1Password field | Purpose |
@@ -286,6 +283,8 @@ bun run check
 Tests run in workerd against local Worker bindings and do not require an Akahu account. They cover Access JWT validation, REST and MCP boundaries, provider decoding and retry behavior, synchronization, persistence, pagination, rate limits, cooldowns, and security headers.
 
 Type checking uses `tsrs`, a native TypeScript compiler. The `typescript` alias retains the TypeScript 6 JavaScript compiler API for lint plugin dependencies that require it; it is not the compiler invoked by `bun run typecheck`.
+
+Effect and its platform packages are pinned to 4.0.7, including the shared Node and D1 dependencies, because Alchemy beta.84 uses `effect/Crypto`, which Effect 4.1 removed. Upgrade these together with Alchemy after reviewing its state-store migration requirements.
 
 ## Relevant Documentation
 
