@@ -39,7 +39,7 @@ Connected financial institutions
 
 ## Requirements
 
-- [Bun 1.4.0](https://bun.sh/)
+- [Bun 1.4.4](https://bun.sh/)
 - A Cloudflare account with a domain managed by Cloudflare
 - A Cloudflare Access team
 - An [Akahu Personal App](https://developers.akahu.nz/docs/personal-apps) with read-only account and transaction permissions
@@ -281,6 +281,10 @@ bun run check
 ```
 
 Tests run in workerd against local Worker bindings and do not require an Akahu account. They cover Access JWT validation, REST and MCP boundaries, provider decoding and retry behavior, synchronization, persistence, pagination, rate limits, cooldowns, and security headers.
+
+Type checking uses `tsrs`, a native TypeScript compiler. The `typescript` alias retains the TypeScript 6 JavaScript compiler API for lint plugin dependencies that require it; it is not the compiler invoked by `bun run typecheck`.
+
+Effect and its platform packages are pinned to 4.0.7, including the shared Node and D1 dependencies, because Alchemy beta.84 uses `effect/Crypto`, which Effect 4.1 removed. Upgrade these together with Alchemy after reviewing its state-store migration requirements.
 
 ## Relevant Documentation
 
