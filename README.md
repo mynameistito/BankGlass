@@ -121,7 +121,7 @@ The `dev` and `deploy` scripts use `varlock run` to resolve and validate values 
 
 ## Deploy
 
-BankGlass includes an Alchemy deployment and a GitHub Actions workflow. For a fork, grant its 1Password service account access to the referenced vault, or create equivalent items in its own account and replace the vault and item IDs in each `op()` reference in [`.env.tpl`](.env.tpl). Before local or GitHub deployment, set `ACCESS_APP_HOSTNAME` in the Access item to your own Access-protected production hostname.
+BankGlass includes an Alchemy deployment and a GitHub Actions workflow. For a fork, grant its 1Password service account access to the referenced vault, or create equivalent fields in its own account. Replace each complete 1Password reference in [`.env.tpl`](.env.tpl) and [the deployment workflow](.github/workflows/deploy.yml) with the reference copied for the corresponding field in the new item; field IDs as well as vault and item IDs differ between items. The environment variable name beside each reference identifies the field listed below. Before local or GitHub deployment, set `ACCESS_APP_HOSTNAME` in the Access item to your own Access-protected production hostname.
 
 The referenced 1Password item needs these fields. Both local Varlock runs and GitHub deployments read their configuration from it:
 
@@ -143,7 +143,7 @@ The referenced 1Password item needs these fields. Both local Varlock runs and Gi
 
 All these fields are marked sensitive in `.env.tpl`, so Varlock redacts them in its summaries. The workflow disables the Akahu provider credentials in preview deployments, but shares the Cloudflare deploy token and API bearer token with production. Use a Cloudflare token scoped for both deployment paths and be aware that preview code can receive the shared API bearer token.
 
-The only required GitHub repository secret is `OP_SERVICE_ACCOUNT_TOKEN`, the 1Password service-account token used to unlock the item. It is the bootstrap credential and cannot be fetched from the item it unlocks. Grant the service account read access to the vault containing the referenced item. For local development, use desktop-app auth or set `OP_TOKEN` in your shell instead.
+The only required GitHub repository secret is `OP_TARGET_SERVICE_ACCOUNT_TOKEN`, the 1Password service-account token used to unlock the item. It is the bootstrap credential and cannot be fetched from the item it unlocks. Grant the service account read access to the vault containing the referenced item. For local development, use desktop-app auth or set `OP_TOKEN` in your shell instead.
 
 For a local production deployment, set the stage and run:
 
