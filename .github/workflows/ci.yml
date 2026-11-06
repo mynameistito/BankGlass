@@ -34,6 +34,8 @@ jobs:
         run: |
           python3 - <<'PY'
           import os
+          import json
+          import re
           import sys
           import urllib.error
           import urllib.request
@@ -54,18 +56,37 @@ jobs:
 
           opener = urllib.request.build_opener(NoRedirect())
           for label, path, authenticated in (("version", "version", True), ("list_stacks", "state/stacks", True)):
-              request = urllib.request.Request(expected + path, method="GET")
+              request = urllib.request.Request(expected + path, method="GET", headers={"User-Agent": "bankglass-state-preflight/1.0"})
               if authenticated:
                   request.add_header("Authorization", "Bearer " + token)
               try:
-                  with opener.open(request, timeout=15) as response:
-                      status = response.status
+                  response = opener.open(request, timeout=15)
               except urllib.error.HTTPError as error:
-                  status = error.code
+                  response = error
               except Exception:
                   print(label + "_http=request_failed")
                   sys.exit(1)
+              with response:
+                  status = response.status
+                  headers = response.headers
+                  body = response.read(1048576)
               print(label + "_http=" + str(status))
+              for name, pattern in (("Server", r"[A-Za-z0-9._/-]{1,80}"), ("Content-Type", r"[A-Za-z0-9.+/-]{1,80}"), ("CF-Ray", r"[A-Fa-f0-9]{8,32}-[A-Z]{3}"), ("CF-Mitigated", r"[A-Za-z0-9_-]{1,40}")):
+                  value = headers.get(name, "").split(";", 1)[0].strip()
+                  if re.fullmatch(pattern, value) and token not in value and value not in token:
+                      print(label + "_" + name.lower().replace("-", "_") + "=" + value)
+              scheme = headers.get("WWW-Authenticate", "").split(None, 1)[0:1]
+              if scheme and re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,30}", scheme[0]) and token not in scheme[0] and scheme[0] not in token:
+                  print(label + "_www_authenticate_scheme=" + scheme[0])
+              lower = body.lower()
+              print(label + "_cloudflare_access_login=" + str(b"cloudflare access" in lower and b"login" in lower).lower())
+              print(label + "_challenge=" + str(any(marker in lower for marker in (b"just a moment", b"challenge-platform", b"attention required"))).lower())
+              try:
+                  parsed = json.loads(body)
+                  version_7 = isinstance(parsed, dict) and parsed.get("version") == 7
+              except (ValueError, UnicodeDecodeError):
+                  version_7 = False
+              print(label + "_json_version_7=" + str(version_7).lower())
               if status != 200:
                   sys.exit(1)
           PY
