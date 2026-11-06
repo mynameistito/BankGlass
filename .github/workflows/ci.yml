@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
   pull_request:
@@ -11,7 +12,66 @@ permissions:
   contents: read
 
 jobs:
+  validate-preview-state:
+    if: >-
+      github.event_name == 'workflow_dispatch' && github.repository == 'mynameistito/BankGlass' && github.ref == 'refs/heads/chore/bankglass-state-preflight'
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Resolve isolated preview state bearer
+        id: state
+        uses: 1password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1
+        with:
+          version: 2.34.1
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_TARGET_SERVICE_ACCOUNT_TOKEN }}
+          ALCHEMY_PREVIEW_STATE_TOKEN: op://i56qshgciuy4cdg4pjrilaeriy/ienc2qh3u37u2upcumftffpql4/credential
+      - name: Check isolated preview state read access
+        env:
+          STATE_URL: ${{ vars.ALCHEMY_PREVIEW_STATE_URL }}
+          STATE_EXPECTED_ORIGIN: ${{ vars.ALCHEMY_PREVIEW_STATE_EXPECTED_ORIGIN }}
+          STATE_TOKEN: ${{ steps.state.outputs.ALCHEMY_PREVIEW_STATE_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import sys
+          import urllib.error
+          import urllib.request
+
+          expected = "https://alchemy-state-store-preview-bankglass-beta84-v7.mynameistito.workers.dev/"
+          if os.environ.get("STATE_URL") != expected or os.environ.get("STATE_EXPECTED_ORIGIN") != expected:
+              print("backend_configuration=invalid")
+              sys.exit(1)
+          token = os.environ.get("STATE_TOKEN", "")
+          if not token:
+              print("state_bearer_resolution=failed")
+              sys.exit(1)
+          print("state_bearer_resolution=success")
+
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          opener = urllib.request.build_opener(NoRedirect())
+          for label, path, authenticated in (("version", "version", False), ("list_stacks", "state/stacks", True)):
+              request = urllib.request.Request(expected + path, method="GET")
+              if authenticated:
+                  request.add_header("Authorization", "Bearer " + token)
+              try:
+                  with opener.open(request, timeout=15) as response:
+                      status = response.status
+              except urllib.error.HTTPError as error:
+                  status = error.code
+              except Exception:
+                  print(label + "_http=request_failed")
+                  sys.exit(1)
+              print(label + "_http=" + str(status))
+              if status != 200:
+                  sys.exit(1)
+          PY
+
   preview-bundle:
+    if: github.event_name != 'workflow_dispatch'
     name: Worker preview bundle
     runs-on: ubuntu-24.04
     steps:
@@ -37,6 +97,7 @@ jobs:
           retention-days: 1
 
   check:
+    if: github.event_name != 'workflow_dispatch'
     name: ${{ matrix.name }}
     runs-on: ubuntu-24.04
     strategy:
