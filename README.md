@@ -123,7 +123,7 @@ The `dev` and `deploy` scripts use `varlock run` to resolve and validate values 
 
 BankGlass includes an Alchemy deployment and a GitHub Actions workflow. For a fork, grant its 1Password service account access to the referenced vault, or create equivalent fields in its own account. Replace each complete 1Password reference in [`.env.tpl`](.env.tpl) and [the deployment workflow](.github/workflows/deploy.yml) with the reference copied for the corresponding field in the new item; field IDs as well as vault and item IDs differ between items. The environment variable name beside each reference identifies the field listed below. Before local or GitHub deployment, set `ACCESS_APP_HOSTNAME` in the Access item to your own Access-protected production hostname.
 
-The referenced 1Password item needs these fields. Both local Varlock runs and GitHub deployments read their configuration from it:
+The referenced 1Password item needs these fields. Local Varlock runs and GitHub deployments read their configuration from it; the preview bearer is only used by the GitHub preview workflow:
 
 | 1Password field | Purpose |
 | --- | --- |
@@ -131,7 +131,8 @@ The referenced 1Password item needs these fields. Both local Varlock runs and Gi
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account used for deployment |
 | `AKAHU_APP_TOKEN` | Akahu Personal App ID token |
 | `AKAHU_USER_TOKEN` | Akahu user access token |
-| `API_BEARER_TOKEN` | Authentication for `/api/v1/*` routes; shared by production and previews |
+| `API_BEARER_TOKEN` | Production authentication for `/api/v1/*` routes |
+| `PREVIEW_API_BEARER_TOKEN` | Separate preview authentication for `/api/v1/*` routes |
 | `ACCESS_APP_HOSTNAME` | Production Access-protected hostname |
 | `ACCESS_POLICY_AUD` | Access application audience used by production and previews |
 | `ACCESS_TEAM_DOMAIN` | Cloudflare Access team domain |
@@ -141,7 +142,7 @@ The referenced 1Password item needs these fields. Both local Varlock runs and Gi
 | `SYNC_LOOKBACK_DAYS` | Initial transaction lookback |
 | `CLOUDFLARE_WORKERS_SUBDOMAIN` | Workers subdomain used to form preview hostnames |
 
-All these fields are marked sensitive in `.env.tpl`, so Varlock redacts them in its summaries. The workflow disables the Akahu provider credentials in preview deployments, but shares the Cloudflare deploy token and API bearer token with production. Use a Cloudflare token scoped for both deployment paths and be aware that preview code can receive the shared API bearer token.
+The local fields are marked sensitive in `.env.tpl`, so Varlock redacts them in its summaries. The workflow uses inert Akahu credentials and a separate API bearer for previews. The Cloudflare deploy token remains shared with production; previews are not deployment-ready until an isolated deploy token, state backend and `BANK_STORE` binding are configured and verified.
 
 The only required GitHub repository secret is `OP_TARGET_SERVICE_ACCOUNT_TOKEN`, the 1Password service-account token used to unlock the item. It is the bootstrap credential and cannot be fetched from the item it unlocks. Grant the service account read access to the vault containing the referenced item. For local development, use desktop-app auth or set `OP_TOKEN` in your shell instead.
 
@@ -154,7 +155,7 @@ bun run deploy
 
 The deploy script passes `STAGE` to Alchemy as its explicit `--stage`, keeping the stack state stage aligned with the resource names and production settings in `alchemy.run.ts`. Varlock loads `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` from the item for local deploys as well as CI.
 
-For CI, the workflow loads all application and deployment values from this item and uses the same Cloudflare and API bearer credentials for previews and production. It pins the 1Password CLI to version `2.34.1`. The CI workflow also builds the Worker bundle with Wrangler in dry-run mode, without deployment credentials, and uploads the `alchemy-worker` artifact consumed by the trusted preview action.
+For CI, the workflow loads application and deployment values from this item. It pins the 1Password CLI to version `2.34.1`. The CI workflow also builds the Worker bundle with Wrangler in dry-run mode, without deployment credentials, and uploads the `alchemy-worker` artifact consumed by the trusted preview action.
 
 The included deployment workflow deploys `main` after CI succeeds and creates previews for same-repository pull requests. After the first deployment:
 

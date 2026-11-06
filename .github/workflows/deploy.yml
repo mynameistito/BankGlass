@@ -74,7 +74,7 @@ jobs:
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_TARGET_SERVICE_ACCOUNT_TOKEN }}
 
-          API_BEARER_TOKEN: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/jqjhxjjni6c7nb4iwz2vp7o4hi
+          PREVIEW_API_BEARER_TOKEN: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/preview_api_bearer_token
           CLOUDFLARE_API_TOKEN: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/d6naythanqlr5tpznc4uusqdgq
           ACCESS_POLICY_AUD: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/izs5fv5uc3gwtrqhn2jteap3ty
           CLOUDFLARE_ACCOUNT_ID: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/m3hawifr42jtbhh2a6dx2c5nwy
@@ -89,7 +89,7 @@ jobs:
       - name: Validate preview deployment credentials
         if: steps.preview_context.outputs.eligible == 'true'
         env:
-          API_BEARER_TOKEN: ${{ steps.op_preview.outputs.API_BEARER_TOKEN }}
+          API_BEARER_TOKEN: ${{ steps.op_preview.outputs.PREVIEW_API_BEARER_TOKEN }}
           ACCESS_POLICY_AUD: ${{ steps.op_preview.outputs.ACCESS_POLICY_AUD }}
           ACCESS_APP_HOSTNAME: ${{ steps.op_preview.outputs.ACCESS_APP_HOSTNAME }}
           ACCESS_TEAM_DOMAIN: ${{ steps.op_preview.outputs.ACCESS_TEAM_DOMAIN }}
@@ -131,7 +131,7 @@ jobs:
 
       - name: Run Alchemy deployment
         # The trusted action keeps exact-SHA/fork policy centralized.
-        # Preview code gets inert Akahu credentials but shares the API bearer token.
+        # Preview code gets inert Akahu credentials and a separate API bearer token.
         uses: mynameistito/alchemy-deploy@4e29a36d61cf8cc4277bdcd35d7b3eff13150b38 # v3.2.0
         env:
           AKAHU_APP_TOKEN: >-
@@ -141,7 +141,7 @@ jobs:
             ${{ steps.op_production.outputs.AKAHU_USER_TOKEN || 'preview-provider-disabled' }}
 
           API_BEARER_TOKEN: >-
-            ${{ github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && steps.op_production.outputs.API_BEARER_TOKEN || steps.op_preview.outputs.API_BEARER_TOKEN }}
+            ${{ github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && steps.op_production.outputs.API_BEARER_TOKEN || steps.op_preview.outputs.PREVIEW_API_BEARER_TOKEN }}
 
           CLOUDFLARE_API_TOKEN: >-
             ${{ github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && steps.op_production.outputs.CLOUDFLARE_API_TOKEN || steps.op_preview.outputs.CLOUDFLARE_API_TOKEN }}
@@ -155,7 +155,7 @@ jobs:
             ${{ github.event_name == 'workflow_run' &&
                 github.event.workflow_run.event == 'pull_request' &&
                 format(
-                  'bankglass-pr-{0}.{1}.workers.dev',
+                  'pr-{0}-bankglass.{1}.workers.dev',
                   github.event.workflow_run.pull_requests[0].number,
                   steps.op_preview.outputs.CLOUDFLARE_WORKERS_SUBDOMAIN
                 ) ||
@@ -170,6 +170,18 @@ jobs:
 
         with:
           worker-name: bankglass
+          preview-compatibility-date: "2026-07-11"
+          preview-compatibility-flags: '["nodejs_compat"]'
+          # Preview-only public defaults; BANK_STORE requires an isolated binding.
+          worker-config: >-
+            {"AKAHU_API_BASE_URL":"https://api.akahu.io/v1","API_RATE_LIMIT_PER_MINUTE":"60","REFRESH_COOLDOWN_SECONDS":"3600","SYNC_LOOKBACK_DAYS":"14"}
+          worker-secrets: >-
+            ${{ format('{{"ACCESS_APP_HOSTNAME":{0},"ACCESS_POLICY_AUD":{1},"ACCESS_TEAM_DOMAIN":{2},"AKAHU_APP_TOKEN":{3},"AKAHU_USER_TOKEN":{3},"API_BEARER_TOKEN":{4}}}',
+                toJSON(format('pr-{0}-bankglass.{1}.workers.dev', github.event.workflow_run.pull_requests[0].number || github.event.pull_request.number, steps.op_preview.outputs.CLOUDFLARE_WORKERS_SUBDOMAIN)),
+                toJSON(steps.op_preview.outputs.ACCESS_POLICY_AUD || ''),
+                toJSON(steps.op_preview.outputs.ACCESS_TEAM_DOMAIN || ''),
+                toJSON('preview-provider-disabled'),
+                toJSON(steps.op_preview.outputs.PREVIEW_API_BEARER_TOKEN || '')) }}
           deploy-command: bunx --no-install alchemy deploy --stage "$STAGE" --yes
           destroy-command: bunx --no-install alchemy destroy --stage "$STAGE" --yes
           production-stage: prod
