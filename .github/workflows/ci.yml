@@ -53,7 +53,7 @@ jobs:
                   return None
 
           opener = urllib.request.build_opener(NoRedirect())
-          for label, path, authenticated in (("version", "version", False), ("list_stacks", "state/stacks", True)):
+          for label, path, authenticated in (("version", "version", True), ("list_stacks", "state/stacks", True)):
               request = urllib.request.Request(expected + path, method="GET")
               if authenticated:
                   request.add_header("Authorization", "Bearer " + token)
