@@ -18,6 +18,8 @@ const publicConfigSchema = z
   })
   .strict();
 
+const expression = (value: string) => ["$", `{{ ${value} }}`].join("");
+
 describe("preview runtime wiring", () => {
   it("decodes the workflow's public defaults with synthetic secrets", async () => {
     const marker = "worker-config: >-";
@@ -59,6 +61,61 @@ describe("preview runtime wiring", () => {
     );
     expect(secrets).not.toContain("steps.op_production");
     expect(secrets).toContain("preview-provider-disabled");
+  });
+
+  it("requires the isolated state configuration before preview deployment", () => {
+    const start = workflow.indexOf(
+      "- name: Validate preview deployment credentials"
+    );
+
+    const end = workflow.indexOf("- name: Validate production secrets", start);
+    const validation = workflow.slice(start, end);
+
+    expect(validation).toContain(
+      "if: steps.preview_context.outputs.eligible == 'true'"
+    );
+    expect(validation).toContain('test -n "$ALCHEMY_PREVIEW_STATE_URL"');
+    expect(validation).toContain(
+      'test -n "$ALCHEMY_PREVIEW_STATE_EXPECTED_ORIGIN"'
+    );
+    expect(validation).toContain('test -n "$ALCHEMY_PREVIEW_STATE_TOKEN"');
+  });
+
+  it("passes the state bearer separately from Worker secrets", () => {
+    const start = workflow.indexOf("- name: Run Alchemy deployment");
+    const action = workflow.slice(start);
+    const secretsStart = action.indexOf("worker-secrets: >-");
+    const secretsEnd = action.indexOf("deploy-command:", secretsStart);
+    const workerSecrets = action.slice(secretsStart, secretsEnd);
+
+    expect(action).toContain(
+      `preview-state-url: ${expression("vars.ALCHEMY_PREVIEW_STATE_URL")}`
+    );
+    expect(action).toContain(
+      `preview-state-expected-origin: ${expression("vars.ALCHEMY_PREVIEW_STATE_EXPECTED_ORIGIN")}`
+    );
+    expect(action).toContain(
+      `preview-state-token: ${expression("steps.op_preview_state.outputs.ALCHEMY_PREVIEW_STATE_TOKEN")}`
+    );
+    expect(workerSecrets).not.toContain("ALCHEMY_PREVIEW_STATE_TOKEN");
+  });
+
+  it("loads the state bearer only for an eligible preview", () => {
+    const start = workflow.indexOf("- name: Load preview state bearer");
+
+    const end = workflow.indexOf(
+      "- name: Validate preview deployment credentials",
+      start
+    );
+
+    const load = workflow.slice(start, end);
+
+    expect(load).toContain(
+      "if: steps.preview_context.outputs.eligible == 'true'"
+    );
+    expect(load).toContain("secrets.OP_TARGET_SERVICE_ACCOUNT_TOKEN");
+    expect(load).toContain("ALCHEMY_PREVIEW_STATE_TOKEN: op://");
+    expect(load).not.toContain("API_BEARER_TOKEN");
   });
 
   it("uses the real Workerd Durable Object fixture without a provider", async () => {

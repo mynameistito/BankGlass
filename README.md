@@ -142,7 +142,7 @@ The referenced 1Password item needs these fields. Local Varlock runs and GitHub 
 | `SYNC_LOOKBACK_DAYS` | Initial transaction lookback |
 | `CLOUDFLARE_WORKERS_SUBDOMAIN` | Workers subdomain used to form preview hostnames |
 
-The local fields are marked sensitive in `.env.tpl`, so Varlock redacts them in its summaries. The workflow uses inert Akahu credentials and a separate API bearer for previews. The Cloudflare deploy token remains shared with production; previews are not deployment-ready until an isolated deploy token, state backend and `BANK_STORE` binding are configured and verified.
+The local fields are marked sensitive in `.env.tpl`, so Varlock redacts them in its summaries. The workflow uses inert Akahu credentials and a separate API bearer for previews. It also reads a separate preview state bearer from 1Password and requires the GitHub repository variables `ALCHEMY_PREVIEW_STATE_URL` and `ALCHEMY_PREVIEW_STATE_EXPECTED_ORIGIN` to identify the isolated state backend. Grant the target service account read access to that bearer item as well. The Cloudflare deploy token remains shared with production; previews are not deployment-ready until an isolated deploy token and `BANK_STORE` binding are configured and the complete path is verified.
 
 The only required GitHub repository secret is `OP_TARGET_SERVICE_ACCOUNT_TOKEN`, the 1Password service-account token used to unlock the item. It is the bootstrap credential and cannot be fetched from the item it unlocks. Grant the service account read access to the vault containing the referenced item. For local development, use desktop-app auth or set `OP_TOKEN` in your shell instead.
 
