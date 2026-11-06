@@ -122,6 +122,7 @@ jobs:
           test -n "$ALCHEMY_PREVIEW_STATE_URL" || { echo "Missing preview state URL" >&2; exit 1; }
           test -n "$ALCHEMY_PREVIEW_STATE_EXPECTED_ORIGIN" || { echo "Missing preview state expected origin" >&2; exit 1; }
           test -n "$ALCHEMY_PREVIEW_STATE_TOKEN" || { echo "Missing preview state token" >&2; exit 1; }
+          test "$ALCHEMY_PREVIEW_STATE_URL" != "https://alchemy-state-store-preview-bankglass-beta84-v7.mynameistito.workers.dev/" || { echo "Preview state store v8 migration is required before deployment" >&2; exit 1; }
 
       - name: Validate production secrets
         if: >-
@@ -148,7 +149,7 @@ jobs:
       - name: Run Alchemy deployment
         # The trusted action keeps exact-SHA/fork policy centralized.
         # Preview code gets inert Akahu credentials and a separate API bearer token.
-        uses: mynameistito/alchemy-deploy@4e29a36d61cf8cc4277bdcd35d7b3eff13150b38 # v3.2.0
+        uses: mynameistito/alchemy-deploy@0db293d18c4d6d99926cd74488f7eb6a26aa73bc # v4.0.0
         env:
           AKAHU_APP_TOKEN: >-
             ${{ steps.op_production.outputs.AKAHU_APP_TOKEN || 'preview-provider-disabled' }}

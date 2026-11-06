@@ -41,21 +41,21 @@
     "prepare": "lefthook install"
   },
   "dependencies": {
-    "@alchemy.run/cloudflare": "2.0.0-beta.84",
+    "@alchemy.run/cloudflare": "2.0.0-beta.85",
     "@modelcontextprotocol/server": "2.4.0",
     "@varlock/1password-plugin": "2.0.6",
     "agents": "^0.32.0",
-    "alchemy": "2.0.0-beta.84",
-    "effect": "4.0.7",
+    "alchemy": "2.0.0-beta.85",
+    "effect": "4.1.2",
     "jose": "^6.2.14",
     "varlock": "1.24.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.4.11",
-    "@cloudflare/workers-types": "^5.20261030.1",
-    "@effect/platform-bun": "4.0.7",
-    "@effect/platform-node": "4.0.7",
+    "@cloudflare/workers-types": "5.20261031.1",
+    "@effect/platform-bun": "4.1.2",
+    "@effect/platform-node": "4.1.2",
     "eslint-plugin-github": "6.1.2",
     "eslint-plugin-jsdoc": "^65.4.2",
     "eslint-plugin-sonarjs": "^4.2.2",
@@ -72,8 +72,9 @@
     "wrangler": "4.156.0"
   },
   "overrides": {
-    "@effect/platform-node-shared": "4.0.7",
-    "@effect/sql-d1": "4.0.7",
+    "@cloudflare/workers-types": "5.20261031.1",
+    "@effect/platform-node-shared": "4.1.2",
+    "@effect/sql-d1": "4.1.2",
     "@hono/node-server": "1.19.15",
     "hono": "4.13.13",
     "lodash": "4.18.0",
