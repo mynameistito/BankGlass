@@ -43,19 +43,19 @@ jobs:
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
-          CLOUDFLARE_API_TOKEN: op://uhub4xx3iwwsaxj3robdosm2hu/zqaspv4bzqoqrfqklsiemgique/CLOUDFLARE_API_TOKEN
-          AKAHU_APP_TOKEN: op://uhub4xx3iwwsaxj3robdosm2hu/zqaspv4bzqoqrfqklsiemgique/AKAHU_APP_TOKEN
-          AKAHU_USER_TOKEN: op://uhub4xx3iwwsaxj3robdosm2hu/zqaspv4bzqoqrfqklsiemgique/AKAHU_USER_TOKEN
-          API_BEARER_TOKEN: op://uhub4xx3iwwsaxj3robdosm2hu/zqaspv4bzqoqrfqklsiemgique/API_BEARER_TOKEN
-          ACCESS_POLICY_AUD: op://uhub4xx3iwwsaxj3robdosm2hu/zqaspv4bzqoqrfqklsiemgique/ACCESS_POLICY_AUD
-          CLOUDFLARE_ACCOUNT_ID: op://uhub4xx3iwwsaxj3robdosm2hu/zqaspv4bzqoqrfqklsiemgique/CLOUDFLARE_ACCOUNT_ID
-          ACCESS_APP_HOSTNAME: op://uhub4xx3iwwsaxj3robdosm2hu/zqaspv4bzqoqrfqklsiemgique/ACCESS_APP_HOSTNAME
-          ACCESS_TEAM_DOMAIN: op://uhub4xx3iwwsaxj3robdosm2hu/zqaspv4bzqoqrfqklsiemgique/ACCESS_TEAM_DOMAIN
-          AKAHU_API_BASE_URL: op://uhub4xx3iwwsaxj3robdosm2hu/zqaspv4bzqoqrfqklsiemgique/AKAHU_API_BASE_URL
-          API_RATE_LIMIT_PER_MINUTE: op://uhub4xx3iwwsaxj3robdosm2hu/zqaspv4bzqoqrfqklsiemgique/API_RATE_LIMIT_PER_MINUTE
-          REFRESH_COOLDOWN_SECONDS: op://uhub4xx3iwwsaxj3robdosm2hu/zqaspv4bzqoqrfqklsiemgique/REFRESH_COOLDOWN_SECONDS
-          SYNC_LOOKBACK_DAYS: op://uhub4xx3iwwsaxj3robdosm2hu/zqaspv4bzqoqrfqklsiemgique/SYNC_LOOKBACK_DAYS
-          CLOUDFLARE_WORKERS_SUBDOMAIN: op://uhub4xx3iwwsaxj3robdosm2hu/zqaspv4bzqoqrfqklsiemgique/CLOUDFLARE_WORKERS_SUBDOMAIN
+          CLOUDFLARE_API_TOKEN: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/d6naythanqlr5tpznc4uusqdgq
+          AKAHU_APP_TOKEN: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/2z24lkruqztbaho7uqoqjjsse4
+          AKAHU_USER_TOKEN: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/lleillmqnh5ni57dki7edz7wqm
+          API_BEARER_TOKEN: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/jqjhxjjni6c7nb4iwz2vp7o4hi
+          ACCESS_POLICY_AUD: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/izs5fv5uc3gwtrqhn2jteap3ty
+          CLOUDFLARE_ACCOUNT_ID: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/m3hawifr42jtbhh2a6dx2c5nwy
+          ACCESS_APP_HOSTNAME: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/3dxm52aets6a56k74vj7habf7i
+          ACCESS_TEAM_DOMAIN: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/23b6osmzfojl6bblpdayommjhq
+          AKAHU_API_BASE_URL: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/t5qmhl4p7mqui6irefzhvcckwa
+          API_RATE_LIMIT_PER_MINUTE: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/2qyida4wopighmenp3gxrwgngy
+          REFRESH_COOLDOWN_SECONDS: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/k4cozn3ao4azwyj6gsym2ex6qa
+          SYNC_LOOKBACK_DAYS: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/56zvuakscsmjv4ofibg7gwhiie
+          CLOUDFLARE_WORKERS_SUBDOMAIN: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/66nv6ybjksk2fcto5e7blr2qlm
 
       - name: Install 1Password CLI for preview configuration lookup
         if: steps.preview_context.outputs.eligible == 'true'
@@ -74,17 +74,17 @@ jobs:
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
-          API_BEARER_TOKEN: op://uhub4xx3iwwsaxj3robdosm2hu/zqaspv4bzqoqrfqklsiemgique/API_BEARER_TOKEN
-          CLOUDFLARE_API_TOKEN: op://uhub4xx3iwwsaxj3robdosm2hu/zqaspv4bzqoqrfqklsiemgique/CLOUDFLARE_API_TOKEN
-          ACCESS_POLICY_AUD: op://uhub4xx3iwwsaxj3robdosm2hu/zqaspv4bzqoqrfqklsiemgique/ACCESS_POLICY_AUD
-          CLOUDFLARE_ACCOUNT_ID: op://uhub4xx3iwwsaxj3robdosm2hu/zqaspv4bzqoqrfqklsiemgique/CLOUDFLARE_ACCOUNT_ID
-          ACCESS_APP_HOSTNAME: op://uhub4xx3iwwsaxj3robdosm2hu/zqaspv4bzqoqrfqklsiemgique/ACCESS_APP_HOSTNAME
-          ACCESS_TEAM_DOMAIN: op://uhub4xx3iwwsaxj3robdosm2hu/zqaspv4bzqoqrfqklsiemgique/ACCESS_TEAM_DOMAIN
-          AKAHU_API_BASE_URL: op://uhub4xx3iwwsaxj3robdosm2hu/zqaspv4bzqoqrfqklsiemgique/AKAHU_API_BASE_URL
-          API_RATE_LIMIT_PER_MINUTE: op://uhub4xx3iwwsaxj3robdosm2hu/zqaspv4bzqoqrfqklsiemgique/API_RATE_LIMIT_PER_MINUTE
-          REFRESH_COOLDOWN_SECONDS: op://uhub4xx3iwwsaxj3robdosm2hu/zqaspv4bzqoqrfqklsiemgique/REFRESH_COOLDOWN_SECONDS
-          SYNC_LOOKBACK_DAYS: op://uhub4xx3iwwsaxj3robdosm2hu/zqaspv4bzqoqrfqklsiemgique/SYNC_LOOKBACK_DAYS
-          CLOUDFLARE_WORKERS_SUBDOMAIN: op://uhub4xx3iwwsaxj3robdosm2hu/zqaspv4bzqoqrfqklsiemgique/CLOUDFLARE_WORKERS_SUBDOMAIN
+          API_BEARER_TOKEN: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/jqjhxjjni6c7nb4iwz2vp7o4hi
+          CLOUDFLARE_API_TOKEN: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/d6naythanqlr5tpznc4uusqdgq
+          ACCESS_POLICY_AUD: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/izs5fv5uc3gwtrqhn2jteap3ty
+          CLOUDFLARE_ACCOUNT_ID: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/m3hawifr42jtbhh2a6dx2c5nwy
+          ACCESS_APP_HOSTNAME: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/3dxm52aets6a56k74vj7habf7i
+          ACCESS_TEAM_DOMAIN: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/23b6osmzfojl6bblpdayommjhq
+          AKAHU_API_BASE_URL: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/t5qmhl4p7mqui6irefzhvcckwa
+          API_RATE_LIMIT_PER_MINUTE: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/2qyida4wopighmenp3gxrwgngy
+          REFRESH_COOLDOWN_SECONDS: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/k4cozn3ao4azwyj6gsym2ex6qa
+          SYNC_LOOKBACK_DAYS: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/56zvuakscsmjv4ofibg7gwhiie
+          CLOUDFLARE_WORKERS_SUBDOMAIN: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/66nv6ybjksk2fcto5e7blr2qlm
 
       - name: Validate preview deployment credentials
         if: steps.preview_context.outputs.eligible == 'true'
