@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
   pull_request:
@@ -11,7 +12,87 @@ permissions:
   contents: read
 
 jobs:
+  validate-preview-state:
+    if: >-
+      github.event_name == 'workflow_dispatch' && github.repository == 'mynameistito/BankGlass' && github.ref == 'refs/heads/chore/bankglass-v8-state-preflight'
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Resolve isolated preview state bearer
+        id: state
+        uses: 1password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1
+        with:
+          version: 2.34.1
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_TARGET_SERVICE_ACCOUNT_TOKEN }}
+          ALCHEMY_PREVIEW_STATE_TOKEN: op://i56qshgciuy4cdg4pjrilaeriy/ienc2qh3u37u2upcumftffpql4/credential
+      - name: Check isolated preview state read access
+        env:
+          STATE_URL: ${{ vars.ALCHEMY_PREVIEW_STATE_URL }}
+          STATE_EXPECTED_ORIGIN: ${{ vars.ALCHEMY_PREVIEW_STATE_EXPECTED_ORIGIN }}
+          STATE_TOKEN: ${{ steps.state.outputs.ALCHEMY_PREVIEW_STATE_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import json
+          import re
+          import sys
+          import urllib.error
+          import urllib.request
+
+          expected = "https://alchemy-state-store-preview-bankglass-beta84-v7.mynameistito.workers.dev/"
+          if os.environ.get("STATE_URL") != expected or os.environ.get("STATE_EXPECTED_ORIGIN") != expected:
+              print("backend_configuration=invalid")
+              sys.exit(1)
+          token = os.environ.get("STATE_TOKEN", "")
+          if not token:
+              print("state_bearer_resolution=failed")
+              sys.exit(1)
+          print("state_bearer_resolution=success")
+
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          opener = urllib.request.build_opener(NoRedirect())
+          for label, path, authenticated in (("version", "version", True), ("list_stacks", "state/stacks", True)):
+              request = urllib.request.Request(expected + path, method="GET", headers={"User-Agent": "bankglass-state-preflight/1.0"})
+              if authenticated:
+                  request.add_header("Authorization", "Bearer " + token)
+              try:
+                  response = opener.open(request, timeout=15)
+              except urllib.error.HTTPError as error:
+                  response = error
+              except Exception:
+                  print(label + "_http=request_failed")
+                  sys.exit(1)
+              with response:
+                  status = response.status
+                  headers = response.headers
+                  body = response.read(1048576)
+              print(label + "_http=" + str(status))
+              for name, pattern in (("Server", r"[A-Za-z0-9._/-]{1,80}"), ("Content-Type", r"[A-Za-z0-9.+/-]{1,80}"), ("CF-Ray", r"[A-Fa-f0-9]{8,32}-[A-Z]{3}"), ("CF-Mitigated", r"[A-Za-z0-9_-]{1,40}")):
+                  value = headers.get(name, "").split(";", 1)[0].strip()
+                  if re.fullmatch(pattern, value) and token not in value and value not in token:
+                      print(label + "_" + name.lower().replace("-", "_") + "=" + value)
+              scheme = headers.get("WWW-Authenticate", "").split(None, 1)[0:1]
+              if scheme and re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,30}", scheme[0]) and token not in scheme[0] and scheme[0] not in token:
+                  print(label + "_www_authenticate_scheme=" + scheme[0])
+              lower = body.lower()
+              print(label + "_cloudflare_access_login=" + str(b"cloudflare access" in lower and b"login" in lower).lower())
+              print(label + "_challenge=" + str(any(marker in lower for marker in (b"just a moment", b"challenge-platform", b"attention required"))).lower())
+              try:
+                  parsed = json.loads(body)
+                  version_8 = isinstance(parsed, dict) and parsed.get("version") == 8
+              except (ValueError, UnicodeDecodeError):
+                  version_8 = False
+              print(label + "_json_version_8=" + str(version_8).lower())
+              if status != 200 or (label == "version" and not version_8):
+                  sys.exit(1)
+          PY
+
   preview-bundle:
+    if: github.event_name != 'workflow_dispatch'
     name: Worker preview bundle
     runs-on: ubuntu-24.04
     steps:
@@ -37,6 +118,7 @@ jobs:
           retention-days: 1
 
   check:
+    if: github.event_name != 'workflow_dispatch'
     name: ${{ matrix.name }}
     runs-on: ubuntu-24.04
     strategy:
