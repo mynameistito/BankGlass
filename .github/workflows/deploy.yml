@@ -41,7 +41,7 @@ jobs:
         with:
           version: 2.34.1
         env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_TARGET_SERVICE_ACCOUNT_TOKEN }}
 
           CLOUDFLARE_API_TOKEN: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/d6naythanqlr5tpznc4uusqdgq
           AKAHU_APP_TOKEN: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/2z24lkruqztbaho7uqoqjjsse4
@@ -63,7 +63,7 @@ jobs:
         with:
           version: 2.34.1
         env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_TARGET_SERVICE_ACCOUNT_TOKEN }}
 
       - name: Load preview configuration from 1Password
         id: op_preview
@@ -72,7 +72,7 @@ jobs:
         with:
           version: 2.34.1
         env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_TARGET_SERVICE_ACCOUNT_TOKEN }}
 
           API_BEARER_TOKEN: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/jqjhxjjni6c7nb4iwz2vp7o4hi
           CLOUDFLARE_API_TOKEN: op://i56qshgciuy4cdg4pjrilaeriy/bu5cw4b3uoefkozgtoklyucvfi/d6naythanqlr5tpznc4uusqdgq

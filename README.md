@@ -146,7 +146,7 @@ The referenced 1Password item needs these fields. Both local Varlock runs and Gi
 
 All these fields are marked sensitive in `.env.tpl`, so Varlock redacts them in its summaries. The workflow disables the Akahu provider credentials in preview deployments, but shares the Cloudflare deploy token and API bearer token with production. Use a Cloudflare token scoped for both deployment paths and be aware that preview code can receive the shared API bearer token.
 
-The only required GitHub repository secret is `OP_SERVICE_ACCOUNT_TOKEN`, the 1Password service-account token used to unlock the item. It is the bootstrap credential and cannot be fetched from the item it unlocks. Grant the service account read access to the vault containing the referenced item. For local development, use desktop-app auth or set `OP_TOKEN` in your shell instead.
+The only required GitHub repository secret is `OP_TARGET_SERVICE_ACCOUNT_TOKEN`, the 1Password service-account token used to unlock the item. It is the bootstrap credential and cannot be fetched from the item it unlocks. Grant the service account read access to the vault containing the referenced item. For local development, use desktop-app auth or set `OP_TOKEN` in your shell instead.
 
 For a local production deployment, set the stage and run:
 
