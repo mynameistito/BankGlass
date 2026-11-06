@@ -122,7 +122,6 @@ jobs:
           test -n "$ALCHEMY_PREVIEW_STATE_URL" || { echo "Missing preview state URL" >&2; exit 1; }
           test -n "$ALCHEMY_PREVIEW_STATE_EXPECTED_ORIGIN" || { echo "Missing preview state expected origin" >&2; exit 1; }
           test -n "$ALCHEMY_PREVIEW_STATE_TOKEN" || { echo "Missing preview state token" >&2; exit 1; }
-          test "$ALCHEMY_PREVIEW_STATE_URL" != "https://alchemy-state-store-preview-bankglass-beta84-v7.mynameistito.workers.dev/" || { echo "Preview state store v8 migration is required before deployment" >&2; exit 1; }
 
       - name: Validate production secrets
         if: >-
